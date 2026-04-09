@@ -1,353 +1,178 @@
-# FoodExpress
+# ExpressHub
 
-FoodExpress is a minimal Node.js + Express service packaged with Docker and deployed through a Jenkins Pipeline.
+ExpressHub is a comprehensive, full-stack food delivery platform built with Node.js and Express. It is designed for containerization with Docker, automated CI/CD with Jenkins, and infrastructure management using Terraform.
 
-This project is designed to demonstrate a complete CI/CD flow:
-- Checkout source from GitHub
-- Install dependencies
-- Run tests
-- Build Docker image
-- Deploy container
+This project serves as a robust template for a modern web service, demonstrating a complete development, deployment, and infrastructure lifecycle.
 
 ---
 
 ## 1) Project Overview
 
 ### Tech Stack
-- Node.js (CommonJS)
-- Express
-- Docker
-- Jenkins Declarative Pipeline
+- **Backend:** Node.js (CommonJS), Express.js
+- **Frontend:** HTML, CSS, JavaScript (static)
+- **Containerization:** Docker
+- **CI/CD:** Jenkins (Declarative Pipeline)
+- **Infrastructure as Code:** Terraform
 
-### Current API
-- `GET /` → returns a text response
-- `POST /` → returns a text response
+### API Endpoints
+The backend exposes a RESTful API for managing the platform's core features:
+- `GET /api/status` → Health check and service status.
+- `POST /api/status` → Test POST endpoint.
+- `PUT /api/status` → Test PUT endpoint.
+- `/api/menu` → Routes for managing menu items.
+- `/api/orders` → Routes for handling customer orders.
+- `/api/restaurants` → Routes for listing and managing restaurants.
+- `/*` → Serves the frontend application for any non-API route.
 
 ### Repository Structure
-- `index.js` → Express application entry point
-- `package.json` → dependencies and npm scripts
-- `Dockerfile` → image build instructions
-- `Jenkinsfile` → CI/CD pipeline definition
+- `index.js` → Main Express application entry point.
+- `package.json` → Project dependencies and npm scripts.
+- `Dockerfile` → Instructions for building the application's Docker image.
+- `Jenkinsfile` → CI/CD pipeline definition for Jenkins.
+- `backend/` → Contains backend route handlers.
+- `frontend/` → Contains the static frontend application.
+- `terraform/` → Terraform configurations for managing infrastructure across different environments (dev, stage, prod).
 
 ---
 
 ## 2) Prerequisites
 
-Install these tools on your Linux machine (or Jenkins agent):
-- Git
-- Node.js and npm
-- Docker Engine
-- Jenkins
-- `libatomic1` system library *(required by Node.js binaries on lean Linux installs)*
-
-Official references:
-- Node.js: https://nodejs.org/en/download
-- Git: https://git-scm.com/downloads/linux
-- Docker Engine on Linux: https://docs.docker.com/engine/install/
-- Jenkins on Linux (official): https://www.jenkins.io/doc/book/installing/linux/
+Ensure these tools are installed on your local machine or Jenkins agent:
+- **Git:** For source control.
+- **Node.js & npm:** For running the application and managing dependencies.
+- **Docker Engine:** For building and running the containerized application.
+- **Terraform:** For managing infrastructure as code.
+- **Jenkins:** For orchestrating the CI/CD pipeline.
+- `libatomic1`: A system library required by Node.js binaries on some lean Linux distributions.
 
 ---
 
-## 3) Local Setup (Step by Step)
+## 3) Local Development
 
-### Step 1: Install system dependencies
+### Step 1: Clone the Repository
 ```bash
-sudo apt-get update
-sudo apt-get install -y git docker.io libatomic1
+git clone <your-repository-url>
+cd ExpressHub
 ```
 
-> ⚠️ `libatomic1` is required by Node.js v12+ binaries. Without it, `node` and `npm` will fail with:
-> `error while loading shared libraries: libatomic.so.1: cannot open shared object file`
-
-### Step 2: Clone the repository
-```bash
-git clone https://github.com/poVvisal/FoodExpress.git
-cd FoodExpress
-```
-
-### Step 3: Install dependencies
+### Step 2: Install Dependencies
 ```bash
 npm install
 ```
 
-### Step 4: Run tests
+### Step 3: Run Tests
+The current test script performs a basic syntax check.
 ```bash
 npm test
 ```
 
-Expected behavior: syntax check passes using:
-```bash
-node --check index.js
-```
-
-### Step 5: Run the app locally
+### Step 4: Run the Application
+This command starts the Express server locally on port 3000.
 ```bash
 node index.js
 ```
 
-Test endpoints:
-```bash
-curl http://localhost:3000/
-curl -X POST http://localhost:3000/
-```
+### Step 5: Test the API
+You can now access the application and its API endpoints:
+- **Frontend:** Open your browser to `http://localhost:3000`
+- **API:**
+  ```bash
+  # Check service status
+  curl http://localhost:3000/api/status
+
+  # Example: Get list of restaurants (assuming endpoint is implemented)
+  curl http://localhost:3000/api/restaurants
+  ```
 
 ---
 
-## 4) Docker Setup (Step by Step)
+## 4) Docker Deployment
 
-### Step 1: Build image
+### Step 1: Build the Docker Image
 ```bash
-docker build -t foodexpress-js .
+docker build -t expresshub-app .
 ```
 
-### Step 2: Run container
+### Step 2: Run the Docker Container
+This command runs the application in a detached container and maps port 3000.
 ```bash
-docker run -d --name foodexpress-js -p 3000:3000 foodexpress-js
+docker run -d --name expresshub-container -p 3000:3000 expresshub-app
 ```
 
-### Step 3: Verify container
+### Step 3: Verify the Container
+Check that the container is running and test the endpoint.
 ```bash
 docker ps
-curl http://localhost:3000/
+curl http://localhost:3000/api/status
 ```
 
-### Step 4: Stop and remove container
+### Step 4: Stop and Remove the Container
 ```bash
-docker stop foodexpress-js
-docker rm foodexpress-js
+docker stop expresshub-container
+docker rm expresshub-container
 ```
 
 ---
 
-## 5) Jenkins Setup on Linux (Step by Step)
+## 5) Jenkins & CI/CD
 
-### Step 1: Install system dependencies
-Before installing Jenkins, ensure required system libraries are present:
-```bash
-sudo apt-get update
-sudo apt-get install -y libatomic1 docker.io
-```
+The `Jenkinsfile` in this repository automates the build, test, and deployment process.
 
-### Step 2: Install Jenkins
-Follow the official Jenkins Linux installation guide:
-- https://www.jenkins.io/doc/book/installing/linux/
+### Jenkins Configuration
+1.  **Install Plugins:** Ensure the `NodeJS`, `Docker Pipeline`, and `Git` plugins are installed in Jenkins.
+2.  **Configure NodeJS:** In **Manage Jenkins → Tools**, add a `NodeJS` installation. The name must match the one specified in the `Jenkinsfile` (`nodejs 'NodeJS-20'`).
+3.  **Docker Permissions:** Allow the `jenkins` user to run Docker commands:
+    ```bash
+    sudo usermod -aG docker jenkins
+    sudo systemctl restart jenkins
+    ```
 
-### Step 3: Start and enable Jenkins
-```bash
-sudo systemctl enable jenkins
-sudo systemctl start jenkins
-sudo systemctl status jenkins
-```
-
-### Step 4: Install suggested plugins
-During first-time setup, choose **Install suggested plugins**.
-
-### Step 5: Install required plugins for this project
-In Jenkins: **Manage Jenkins → Plugins → Available Plugins**
-
-Install (or verify) these plugins:
-- Pipeline
-- Git
-- **NodeJS** ← *required: auto-installs Node/npm into pipeline PATH*
-- **Docker Pipeline** ← *required: enables docker commands in Jenkinsfile*
-- Credentials Binding
-
-Optional but helpful:
-- Blue Ocean
-- Timestamper
-
-Official plugin index: https://plugins.jenkins.io/
-
-### Step 6: Configure NodeJS Tool
-In Jenkins: **Manage Jenkins → Tools → NodeJS installations → Add NodeJS**
-
-| Field | Value |
-|---|---|
-| Name | `NodeJS-20` |
-| Install automatically | ✅ checked |
-| Version | `20.x` (or latest LTS) |
-
-> ⚠️ The name `NodeJS-20` must exactly match what's in your `Jenkinsfile` under `tools { nodejs 'NodeJS-20' }`.
-
-### Step 7: Allow Jenkins to use Docker
-```bash
-sudo usermod -aG docker jenkins
-sudo systemctl restart jenkins
-```
-
-Verify Docker access:
-```bash
-# Check jenkins user is in docker group
-groups jenkins
-# Expected output includes: jenkins docker
-```
+### Pipeline Stages
+The pipeline executes the following stages:
+1.  **Checkout:** Clones the source code from Git.
+2.  **Install Dependencies:** Runs `npm install`.
+3.  **Test:** Runs `npm test`.
+4.  **Docker Build:** Builds the Docker image.
+5.  **Deploy:** Stops any existing container and runs the new one.
 
 ---
 
-## 6) Jenkinsfile
+## 6) Infrastructure with Terraform
 
-The pipeline uses the `tools` block to inject Node.js automatically — no manual PATH setup needed:
+The `terraform/` directory contains the code to provision and manage the infrastructure required to run this application.
 
-```groovy
-pipeline {
-    agent any
+- **`modules/`**: Contains reusable Terraform modules (e.g., for an EC2 instance).
+- **`dev/`, `stage/`, `prod/`**: Environment-specific configurations that use the shared modules to create distinct infrastructure for development, staging, and production.
 
-    tools {
-        nodejs 'NodeJS-20'   // must match name set in Manage Jenkins → Tools
-    }
-
-    stages {
-        stage('Checkout') {
-            steps {
-                git branch: 'main', url: 'https://github.com/poVvisal/FoodExpress.git'
-            }
-        }
-
-        stage('Install Dependencies') {
-            steps {
-                sh 'npm install'
-            }
-        }
-
-        stage('Test') {
-            steps {
-                sh 'npm test'
-            }
-        }
-
-        stage('Docker Build') {
-            steps {
-                sh 'docker build -t foodexpress-js .'
-            }
-        }
-
-        stage('Deploy') {
-            steps {
-                sh 'docker stop foodexpress-js || true'
-                sh 'docker rm foodexpress-js || true'
-                sh 'docker run -d --name foodexpress-js -p 3000:3000 foodexpress-js'
-            }
-        }
-    }
-}
-```
+### Usage
+1.  Navigate to an environment directory (e.g., `terraform/dev`).
+2.  Initialize Terraform:
+    ```bash
+    terraform init
+    ```
+3.  Review the execution plan:
+    ```bash
+    terraform plan
+    ```
+4.  Apply the changes to provision the infrastructure:
+    ```bash
+    terraform apply
+    ```
 
 ---
 
-## 7) Create the Jenkins Pipeline Job
-
-### Step 1: New Item
-- Create a **Pipeline** job (example: `FoodExpress-Pipeline`)
-
-### Step 2: Pipeline Definition
-- Choose **Pipeline script from SCM**
-- SCM: **Git**
-- Repository URL: `https://github.com/poVvisal/FoodExpress.git`
-- Branch: `*/main`
-- Script Path: `Jenkinsfile`
-
-### Step 3: Save and Build
-- Click **Build Now**
-
-Pipeline stages executed:
-1. Checkout
-2. Install Dependencies (`npm install`)
-3. Test (`npm test`)
-4. Docker Build (`docker build -t foodexpress-js .`)
-5. Deploy (`docker run -d --name foodexpress-js -p 3000:3000 foodexpress-js`)
-
----
-
-## 8) Optional: Auto Build with GitHub Webhook
-
-### Jenkins side
-- Enable trigger: **GitHub hook trigger for GITScm polling**
-
-### GitHub side
-- Repository Settings → Webhooks → Add webhook
-- Payload URL: `http://<jenkins-host>:8080/github-webhook/`
-- Content type: `application/json`
-
-Official docs:
-- https://www.jenkins.io/doc/book/pipeline/
-- https://docs.github.com/en/webhooks
-
----
-
-## 9) Troubleshooting
+## 7) Troubleshooting
 
 ### `node: error while loading shared libraries: libatomic.so.1`
-Cause: Missing system library required by Node.js binaries.
+**Cause:** Missing `libatomic1` system library.
+**Fix:** `sudo apt-get update && sudo apt-get install -y libatomic1`
 
-Fix:
-```bash
-sudo apt-get install -y libatomic1
-```
+### `npm: not found` in Jenkins Pipeline
+**Cause:** Node.js is not available in the pipeline's environment.
+**Fix:** Ensure the **NodeJS Plugin** is installed and configured in Jenkins and that the `tools` directive is present in your `Jenkinsfile`.
 
-### `npm: not found` in Jenkins pipeline
-Cause: Node.js is not on the Jenkins agent PATH.
+### Docker commands fail with `permission denied` in Jenkins
+**Cause:** The `jenkins` user is not part of the `docker` group.
+**Fix:** `sudo usermod -aG docker jenkins && sudo systemctl restart jenkins`
 
-Fix:
-- Install the **NodeJS** Jenkins plugin
-- Configure a NodeJS installation under **Manage Jenkins → Tools**
-- Add `tools { nodejs 'NodeJS-20' }` to your Jenkinsfile
-
-### `npm test` fails with `Error: no test specified`
-Cause: old placeholder test script in `package.json`.
-
-Fix:
-```bash
-git pull
-npm install
-npm test
-```
-
-### Jenkins shows `Selected Git installation does not exist`
-Cause: Jenkins tool configuration missing a named Git installation.
-
-Fix:
-- Manage Jenkins → Tools → add/verify Git installation
-
-### Docker build/deploy stage fails with permission denied
-Cause: Jenkins user is not in Docker group.
-
-Fix:
-```bash
-sudo usermod -aG docker jenkins
-sudo systemctl restart jenkins
-```
-
----
-
-## 10) Useful Official References
-
-- Jenkins User Documentation: https://www.jenkins.io/doc/
-- Jenkins Pipeline Book: https://www.jenkins.io/doc/book/pipeline/
-- Jenkins Linux Installation: https://www.jenkins.io/doc/book/installing/linux/
-- Jenkins Plugins Index: https://plugins.jenkins.io/
-- Docker Documentation: https://docs.docker.com/
-- Node.js Documentation: https://nodejs.org/docs/latest/api/
-- Express Documentation: https://expressjs.com/
-
----
-
-## 11) Quick Command Summary
-
-```bash
-# System prereqs (run once on fresh server)
-sudo apt-get install -y libatomic1 docker.io
-sudo usermod -aG docker jenkins
-sudo systemctl restart jenkins
-
-# Local
-npm install
-npm test
-node index.js
-
-# Docker
-docker build -t foodexpress-js .
-docker run -d --name foodexpress-js -p 3000:3000 foodexpress-js
-
-# Jenkins service checks (Linux)
-sudo systemctl status jenkins
-```
