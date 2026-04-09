@@ -39,6 +39,12 @@ resource "aws_security_group" "foodexpress_sg" {
 resource "aws_instance" "foodexpress_server" {
   ami           = var.ami_id
   instance_type = var.instance_type
+  count         = var.instance_count
+
+  root_block_device {
+    volume_size = var.root_volume_size
+    volume_type = var.root_volume_type
+  }
 
   key_name               = aws_key_pair.foodexpress_key.key_name
   vpc_security_group_ids = [aws_security_group.foodexpress_sg.id]
