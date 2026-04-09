@@ -1,6 +1,12 @@
 pipeline {
     agent any
 
+    environment {
+        AWS_ACCESS_KEY_ID     = "your-access-key-id"
+        AWS_SECRET_ACCESS_KEY = "your-secret-access-key"
+        AWS_DEFAULT_REGION    = "us-east-1"
+    }
+
     stages {
         stage('Checkout') {
             steps {
@@ -14,14 +20,6 @@ pipeline {
                     sh 'terraform init'
                     sh 'terraform apply -auto-approve'
                 }
-            }
-        }
-    }
-
-    post {
-        failure {
-            dir('terraform/dev') {
-                sh 'terraform destroy -auto-approve'
             }
         }
     }
