@@ -1,0 +1,21 @@
+{
+  "name": "foodexpress",
+  "version": "1.0.0",
+  "description": "FoodExpress is a minimal Node.js + Express service packaged with Docker and deployed through a Jenkins Pipeline.",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --check index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "pvs:poVvisal/FoodExpress.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1"
+  }
+}

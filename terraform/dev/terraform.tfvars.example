@@ -1,0 +1,2 @@
+key_name   = "foodexpress-dev-key"
+public_key = "ssh-rsa AAAA... your-public-key"

@@ -1,0 +1,17 @@
+# Ignore common development and version control artifacts
+.git
+.gitignore
+.env
+.cache
+*.log
+
+# Ignore dependency directories and build artifacts
+node_modules
+dist
+build
+temp*
+docs/
+
+# The Dockerfile itself can be excluded from the final image
+Dockerfile
+docker-compose.yml
