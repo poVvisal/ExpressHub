@@ -13,7 +13,7 @@ This project serves as a robust template for a modern web service, demonstrating
 - **Frontend:** HTML, CSS, JavaScript (static)
 - **Containerization:** Docker
 - **CI/CD:** Jenkins (Declarative Pipeline)
-- **Infrastructure as Code:** Terraform
+- **Infrastructure as Code:** Terraform and Ansible
 
 ### API Endpoints
 The backend exposes a RESTful API for managing the platform's core features:
