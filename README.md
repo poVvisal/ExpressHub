@@ -53,7 +53,8 @@ Ensure these tools are installed on your local machine or Jenkins agent:
 ### Step 1: Clone the Repository
 ```bash
 git clone https://github.com/poVvisal/ExpressHub.git
-cd ExpressHub``
+cd ExpressHub
+```
 
 ### Step 2: Install Dependencies
 ```bash
