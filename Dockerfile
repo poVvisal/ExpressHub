@@ -3,8 +3,8 @@ FROM node:18.20.4-alpine3.20
 
 WORKDIR /app
 
-# Update packages to get security patches
-RUN apk add --no-cache --upgrade
+# Update all packages to the latest versions to patch security vulnerabilities
+RUN apk upgrade --no-cache
 
 # Create a dedicated user and group for the application
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
