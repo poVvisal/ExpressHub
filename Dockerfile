@@ -6,14 +6,20 @@ WORKDIR /app
 # Update packages to get security patches
 RUN apk add --no-cache --upgrade
 
+# Create a dedicated user and group for the application
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
 # Install dependencies first (layer-cache friendly)
-COPY package*.json ./
+COPY --chown=appuser:appgroup package*.json ./
 RUN npm install --omit=dev
 
 # Copy application source
-COPY index.js       ./
-COPY backend/       ./backend/
-COPY frontend/      ./frontend/
+COPY --chown=appuser:appgroup index.js       ./
+COPY --chown=appuser:appgroup backend/       ./backend/
+COPY --chown=appuser:appgroup frontend/      ./frontend/
+
+# Switch to the non-root user
+USER appuser
 
 EXPOSE 3000
 
