@@ -89,7 +89,14 @@ pipeline {
     }
 
     post {
-        always { echo 'Pipeline finished.' }
+        always {
+            echo 'Pipeline finished. Cleaning up...'
+            // This will clean up the workspace after the build
+            cleanWs()
+
+            // This will clean up unused Docker resources
+            sh 'docker system prune -af'
+        }
         success { echo 'Pipeline completed successfully!' }
         failure { echo 'Pipeline failed. Check the logs.' }
     }
