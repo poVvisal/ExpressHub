@@ -44,6 +44,18 @@ variable "root_volume_type" {
   default     = "gp2"
 }
 
+variable "existing_security_group_id" {
+  description = "Existing Security Group ID to use. If not provided, a new one will be created."
+  type        = string
+  default     = ""
+}
+
+variable "existing_key_name" {
+  description = "Existing Key Pair name to use. If not provided, a new one will be created."
+  type        = string
+  default     = ""
+}
+
 variable "grafana_password" {
   description = "Admin password for Grafana"
   type        = string
