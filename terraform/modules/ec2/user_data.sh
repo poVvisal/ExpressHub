@@ -7,7 +7,15 @@ sudo apt-get install -y git docker.io
 sudo systemctl enable docker
 sudo systemctl start docker
 sudo usermod -aG docker ubuntu
-
+# Activates the changes made to the user group without requiring a system reboot.
+sudo newgrp docker
+# Sets read, write, and execute permissions for all users on the Docker socket file
+sudo chmod 777 /var/run/docker.sock
+# Downloads the latest version of Docker Compose and saves it to #/usr/local/bin/docker-compose.
+sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -
+m)" -o /usr/local/bin/docker-compose
+# Makes the Docker Compose binary executable.
+sudo chmod +x /usr/local/bin/docker-compose
 # Clone the repository
 # If the directory exists, pull the latest changes
 if [ -d "/home/ubuntu/ExpressHub" ]; then
@@ -27,3 +35,7 @@ sudo docker rm foodexpress-js || true
 
 # Run the new container
 sudo docker run -d --name foodexpress-js -p 3000:3000 foodexpress-js
+
+#deploying the monitoring stack
+sudo docker-compose -f "./build-process/docker-compose.yml" up -d --build
+
