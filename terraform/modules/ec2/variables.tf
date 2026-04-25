@@ -44,7 +44,7 @@ variable "root_volume_type" {
 variable "ssh_cidr_blocks" {
   description = "The CIDR blocks allowed to access the instances via SSH."
   type        = list(string)
-  default     = ["117.20.115.254/32"]
+  default     = ["117.20.115.0/32"]
 }
 
 variable "http_cidr_blocks" {

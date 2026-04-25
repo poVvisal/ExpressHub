@@ -37,5 +37,6 @@ sudo docker rm foodexpress-js || true
 sudo docker run -d --name foodexpress-js -p 3000:3000 foodexpress-js
 
 #deploying the monitoring stack
+sudo cd /home/ubuntu/ExpressHub/
 sudo docker-compose -f "./build-process/docker-compose.yml" up -d --build
 

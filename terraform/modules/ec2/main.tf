@@ -28,6 +28,22 @@ resource "aws_security_group" "foodexpress_sg" {
     cidr_blocks = var.app_port_cidr_blocks
   }
 
+  ingress {
+    from_port   = 5000
+    to_port     = 5000
+    protocol    = "tcp"
+    cidr_blocks = var.app_port_cidr_blocks
+    description = "Grafana"
+  }
+
+  ingress {
+    from_port   = 9090
+    to_port     = 9090
+    protocol    = "tcp"
+    cidr_blocks = var.app_port_cidr_blocks
+    description = "Prometheus"
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
