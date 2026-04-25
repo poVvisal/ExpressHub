@@ -8,6 +8,29 @@ This project serves as a robust template for a modern web service, demonstrating
 
 ## 1) Project Overview
 
+### Project Workflow Architecture
+
+```mermaid
+graph TD
+    A[Developer] -->|Push Code| B(GitHub Repository)
+    B -->|Triggers Pipeline| C[Jenkins Master Node]
+    
+    subgraph Jenkins Environment
+        C -->|Delegates Job| D[Jenkins Agent Node]
+        D -->|1. Static Analysis| E(SonarQube)
+        D -->|2. File Security Scan| F(Trivy FS)
+        D -->|3. Build Image| G(Docker)
+        D -->|4. Image Scan| H(Trivy Image)
+        D -->|5. Provision IaC| I(Terraform)
+    end
+    
+    subgraph AWS Cloud Architecture
+        I -->|terraform apply| J[AWS EC2 Instance]
+        J -->|user_data.sh| K(Node.js App Container)
+        J -->|docker-compose| L(Monitoring Stack: Grafana/Prometheus)
+    end
+```
+
 ### Tech Stack
 - **Backend:** Node.js, Express.js
 - **Frontend:** Static HTML, CSS, JavaScript
@@ -36,14 +59,36 @@ The backend exposes a RESTful API for managing the platform's core features:
 
 ---
 
-## 2) Prerequisites
+## 2) Prerequisites & VM Configurations
 
-Ensure these tools are installed on your local machine or Jenkins agent:
-- **Node.js & npm**
-- **Docker & Docker Compose**
-- **Terraform**
-- **Jenkins** (with SonarQube, NodeJS, and Trivy plugins configured)
-- **AWS Credentials** (for Terraform deployments)
+To successfully run this pipeline, you need a specific configuration for your Jenkins Master and Agent VMs (assuming Ubuntu OS):
+
+### Jenkins Master Node
+The master node is responsible for orchestration and maintaining credentials.
+- **Jenkins Installation:** Installed and running as the `jenkins` user.
+- **Plugins Required:** NodeJS, Docker Pipeline, Git, SonarQube Scanner.
+- **Credentials:** Store AWS Credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) and Grafana Password (`grafana-admin-password`) securely in the Jenkins Credential Manager.
+- **Network/SSH:** Must be able to SSH into the Agent Node (exchange `id_rsa.pub` into the Agent's `authorized_keys`).
+
+### Jenkins Agent Node (Ubuntu VM)
+The agent node is where the heavy lifting (testing, building, scanning, deploying) happens.
+- **User Permissions:** 
+  - An active user (e.g., `jenkins` or `ubuntu`) that the Master SSHs into.
+  - **Crucial:** The user must be added to the `docker` group to run containers without `sudo`.
+    ```bash
+    sudo usermod -aG docker $USER
+    newgrp docker # (or restart the session)
+    sudo chmod 666 /var/run/docker.sock
+    ```
+- **Tooling to Install:**
+  - **Docker Engine:** For building the application container.
+  - **Terraform:** Installed and added to system `$PATH` for the deployment stage.
+  - **Trivy:** Installed locally for security scanning.
+- **Directory Permissions:**
+  - Ensure the agent's work directory (`/home/jenkins/workspace` or similar) is owned by the executing user to permit Docker volume mounting and Git operations.
+
+### Target AWS EC2 Instance Permissions
+The deployed EC2 instance is configured purely by Terraform and the `user_data.sh` script, meaning **no manual permission config is required** beforehand. However, Terraform relies on the Jenkins Agent's AWS Credentials having the `AmazonEC2FullAccess` (or properly scoped) IAM privileges to create instances, key pairs, and security groups.
 
 ---
 
