@@ -3,15 +3,15 @@ FROM alpine:latest
 
 WORKDIR /app
 
-# Update all packages to the latest versions to patch security vulnerabilities
-RUN apk upgrade --no-cache
+# Install nodejs and npm
+RUN apk add --no-cache nodejs npm
 
 # Create a dedicated user and group for the application
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 # Install dependencies first (layer-cache friendly)
 COPY --chown=appuser:appgroup package*.json ./
-RUN npm install --omit=dev
+RUN npm install --omit=dev 
 
 # Copy application source
 COPY --chown=appuser:appgroup index.js       ./
