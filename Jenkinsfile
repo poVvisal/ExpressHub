@@ -102,7 +102,7 @@ pipeline {
             script {
                 def stateFile = "${env.WORKSPACE}/${env.TF_DIR}/terraform.tfstate"
                 if (fileExists(stateFile)) {
-                    echo '🔥 Destroying Terraform infrastructure due to failure...'
+                    echo '🔥 Destroying Terraform infrastructure due to failure..ah nerb.'
                     dir("${env.TF_DIR}") {
                         sh 'terraform destroy -auto-approve'
                     }
