@@ -40,3 +40,21 @@ variable "root_volume_type" {
   type        = string
   default     = "gp2"
 }
+
+variable "ssh_cidr_blocks" {
+  description = "The CIDR blocks allowed to access the instances via SSH."
+  type        = list(string)
+  default     = ["117.20.115.254/32"]
+}
+
+variable "http_cidr_blocks" {
+  description = "The CIDR blocks allowed to access the instances via HTTP."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
+variable "app_port_cidr_blocks" {
+  description = "The CIDR blocks allowed to access the application port."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
