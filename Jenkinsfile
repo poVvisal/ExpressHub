@@ -18,20 +18,10 @@ pipeline {
         # Set these to empty strings if you want Terraform to create new resources, or provide existing values to reuse them.
         TF_VAR_existing_security_group_id = "sg-12345678"
         TF_VAR_existing_key_name          = "key-name"
-
-
-
         SONAR_SCANNER_HOME    = tool 'sonar-scanner'
         PATH                  = "${SONAR_SCANNER_HOME}/bin:${env.PATH}"
-
-
-
-
         DOCKER_IMAGE_NAME     = "expresshub-app"
     }
-
-
-
 
     stages {
 
