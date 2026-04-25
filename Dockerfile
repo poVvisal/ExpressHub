@@ -1,5 +1,5 @@
 # Use a more specific and recent version of the node:18-alpine image
-FROM node:18.20.4-alpine3.20
+FROM alpine:latest
 
 WORKDIR /app
 
