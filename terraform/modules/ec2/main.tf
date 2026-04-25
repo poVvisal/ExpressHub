@@ -44,6 +44,13 @@ resource "aws_security_group" "foodexpress_sg" {
     description = "Prometheus"
   }
 
+ingress = {
+    from_port   = 9100
+    to_port     = 9100
+    protocol    = "tcp"
+    cidr_blocks = var.app_port_cidr_blocks
+    description = "Node Exporter"
+}
   egress {
     from_port   = 0
     to_port     = 0

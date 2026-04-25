@@ -7,15 +7,15 @@ sudo apt-get install -y git docker.io
 sudo systemctl enable docker
 sudo systemctl start docker
 sudo usermod -aG docker ubuntu
-# Activates the changes made to the user group without requiring a system reboot.
-sudo newgrp docker
 # Sets read, write, and execute permissions for all users on the Docker socket file
 sudo chmod 777 /var/run/docker.sock
-# Downloads the latest version of Docker Compose and saves it to #/usr/local/bin/docker-compose.
-sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -
-m)" -o /usr/local/bin/docker-compose
+#Docker compose
+sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
 # Makes the Docker Compose binary executable.
 sudo chmod +x /usr/local/bin/docker-compose
+# Activates the changes made to the user group without requiring a system reboot.
+sudo newgrp docker
+
 # Clone the repository
 # If the directory exists, pull the latest changes
 if [ -d "/home/ubuntu/ExpressHub" ]; then
