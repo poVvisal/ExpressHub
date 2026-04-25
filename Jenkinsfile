@@ -7,16 +7,31 @@ pipeline {
         nodejs 'NodeJS'
     }
 
+
+    #Always set these environment variables in Jenkins credentials and reference them here for security.
     environment {
         AWS_ACCESS_KEY_ID     = ""your-access-key-id""
         AWS_SECRET_ACCESS_KEY = "your-secret-access-key"
         AWS_DEFAULT_REGION    = "us-east-1"
+        TF_DIR                = "terraform/dev"
+        TF_VAR_grafana_password = "your-grafana-password"
+        # Set these to empty strings if you want Terraform to create new resources, or provide existing values to reuse them.
+        TF_VAR_existing_security_group_id = "sg-12345678"
+        TF_VAR_existing_key_name          = "key-name"
+
+
+
         SONAR_SCANNER_HOME    = tool 'sonar-scanner'
         PATH                  = "${SONAR_SCANNER_HOME}/bin:${env.PATH}"
+
+
+
+
         DOCKER_IMAGE_NAME     = "expresshub-app"
-        TF_DIR                = "terraform/dev"
-        TF_VAR_grafana_password = credentials('grafana-admin-password')
     }
+
+
+
 
     stages {
 
