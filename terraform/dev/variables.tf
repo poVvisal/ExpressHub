@@ -29,7 +29,7 @@ variable "ami_id" {
 variable "instance_count" {
   description = "Number of EC2 instances to create"
   type        = number
-  default     = 3
+  default     = 1
 }
 
 variable "root_volume_size" {

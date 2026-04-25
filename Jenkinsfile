@@ -80,7 +80,7 @@ pipeline {
         stage('Deploy to EC2') {
             steps {
                 script {
-                    def publicIp = sh(script: "cd terraform/stage && terraform output -raw public_ip", returnStdout: true).trim()
+                    def publicIp = sh(script: "cd terraform/dev && terraform output -raw public_ip", returnStdout: true).trim()
                     sh "scp -o StrictHostKeyChecking=no terraform/modules/ec2/user_data.sh ubuntu@${publicIp}:/home/ubuntu/"
                     sh "ssh -o StrictHostKeyChecking=no ubuntu@${publicIp} 'chmod +x /home/ubuntu/user_data.sh && /home/ubuntu/user_data.sh'"
                 }
