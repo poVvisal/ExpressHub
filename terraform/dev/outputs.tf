@@ -3,5 +3,5 @@ output "public_ip" {
 }
 
 output "instance_id" {
-  value = module.ec2.instance_id
+  value = module.ec2.instance_id[0]
 }
