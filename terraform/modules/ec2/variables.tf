@@ -64,3 +64,9 @@ variable "associate_public_ip_address" {
   type        = bool
   default     = true
 }
+
+variable "grafana_password" {
+  description = "Admin password for Grafana"
+  type        = string
+  sensitive   = true
+}

@@ -15,6 +15,7 @@ pipeline {
         PATH                  = "${SONAR_SCANNER_HOME}/bin:${env.PATH}"
         DOCKER_IMAGE_NAME     = "expresshub-app"
         TF_DIR                = "terraform/dev"
+        TF_VAR_grafana_password = credentials('grafana-admin-password')
     }
 
     stages {

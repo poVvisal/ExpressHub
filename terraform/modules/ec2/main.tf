@@ -65,7 +65,9 @@ resource "aws_instance" "foodexpress_server" {
 
   key_name               = aws_key_pair.foodexpress_key.key_name
   vpc_security_group_ids = [aws_security_group.foodexpress_sg.id]
-  user_data              = file("${path.module}/user_data.sh")
+  user_data = templatefile("${path.module}/user_data.sh", {
+    grafana_password = var.grafana_password
+  })
 
   tags = {
     Name        = "FoodExpress-App-Server-${var.environment}"

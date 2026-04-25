@@ -36,7 +36,9 @@ sudo docker rm foodexpress-js || true
 # Run the new container
 sudo docker run -d --name foodexpress-js -p 3000:3000 foodexpress-js
 
-#deploying the monitoring stack
-sudo cd /home/ubuntu/ExpressHub/
-sudo docker-compose -f "./build-process/docker-compose.yml" up -d --build
+# Set the grafana password locally for the docker-compose execution
+export GF_SECURITY_ADMIN_PASSWORD="${grafana_password}"
+
+# deploying the monitoring stack
+sudo -E docker-compose -f "./build-process/docker-compose.yml" up -d --build
 

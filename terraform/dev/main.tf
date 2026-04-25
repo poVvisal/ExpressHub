@@ -11,4 +11,5 @@ module "ec2" {
   root_volume_type = var.root_volume_type
   ssh_cidr_blocks  = ["117.20.115.254/32"]
   app_port_cidr_blocks = ["172.31.0.0/16"]
+  grafana_password = var.grafana_password
 }

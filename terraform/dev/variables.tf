@@ -43,3 +43,9 @@ variable "root_volume_type" {
   type        = string
   default     = "gp2"
 }
+
+variable "grafana_password" {
+  description = "Admin password for Grafana"
+  type        = string
+  sensitive   = true
+}
