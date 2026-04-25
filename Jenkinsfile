@@ -92,11 +92,12 @@ pipeline {
         always {
             echo 'Pipeline finished. Cleaning up...'
 
-            // Add a stage to destroy Terraform resources
-            stage('Terraform Destroy') {
-                dir('terraform/dev') {
-                    sh 'terraform destroy -auto-approve'
-                }
+            // Destroy Terraform resources
+            echo "Destroying Terraform resources..."
+            dir('terraform/dev') {
+                // The init is needed for the backend state to be found before destroy
+                sh 'terraform init' 
+                sh 'terraform destroy -auto-approve'
             }
 
             // This will clean up the workspace after the build
