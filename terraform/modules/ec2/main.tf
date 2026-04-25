@@ -40,6 +40,7 @@ resource "aws_instance" "foodexpress_server" {
   ami           = var.ami_id
   instance_type = var.instance_type
   count         = var.instance_count
+  associate_public_ip_address = var.associate_public_ip_address
 
   root_block_device {
     volume_size = var.root_volume_size
