@@ -91,6 +91,14 @@ pipeline {
     post {
         always {
             echo 'Pipeline finished. Cleaning up...'
+
+            // Add a stage to destroy Terraform resources
+            stage('Terraform Destroy') {
+                dir('terraform/dev') {
+                    sh 'terraform destroy -auto-approve'
+                }
+            }
+
             // This will clean up the workspace after the build
             cleanWs()
 
