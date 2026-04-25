@@ -69,7 +69,7 @@ pipeline {
 
         stage('Terraform Plan & Apply') {
             steps {
-                dir('terraform/stage') {
+                dir('terraform/dev') {
                     sh 'terraform init'
                     sh 'terraform plan -out=tfplan'
                     sh 'terraform apply -auto-approve tfplan'
