@@ -130,7 +130,6 @@ pipeline {
                         
                         def sshCommand = "ssh -o StrictHostKeyChecking=no -i \$SSH_KEY ubuntu@${EC2_IP}"
                         sh """
-                            ${sshCommand} 'echo "\$DOCKER_PASSWORD" | sudo docker login -u "\$DOCKER_USERNAME" --password-stdin'
                             ${sshCommand} 'sudo docker pull \$DOCKER_USERNAME/${DOCKER_IMAGE_NAME}:latest'
                             ${sshCommand} 'sudo docker stop foodexpress-js || true'
                             ${sshCommand} 'sudo docker rm foodexpress-js || true'
