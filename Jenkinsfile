@@ -31,8 +31,7 @@ pipeline {
                         unstash 'tfstate'
                         echo '✅ Restored previous Terraform state from stash.'
                     } catch (e) {
-                        echo '⚠️ No stashed state found — attempting restore from EC2 backup...'
-                        // EC2 state restore is handled after we know the IP (post Terraform stage)
+                        echo '⚠️ No stashed state found — this may be the first run.'
                     }
                 }
             }
@@ -153,6 +152,24 @@ pipeline {
                         def dockerUser = DOCKER_USERNAME.toLowerCase()
                         def sshCmd = "ssh -o StrictHostKeyChecking=no -i \$SSH_KEY ubuntu@${EC2_IP}"
 
+                        // ── Wait for EC2 userdata (Docker install) to finish ──
+                        echo '⏳ Waiting for EC2 userdata to complete...'
+                        sh """
+                            for i in \$(seq 1 20); do
+                                echo "Attempt \$i: checking if Docker is ready on EC2..."
+                                if ${sshCmd} "command -v docker > /dev/null 2>&1 && sudo docker info > /dev/null 2>&1"; then
+                                    echo "✅ Docker is ready on EC2."
+                                    break
+                                fi
+                                if [ \$i -eq 20 ]; then
+                                    echo "❌ Docker never became ready after 20 attempts. Aborting."
+                                    exit 1
+                                fi
+                                echo "⏳ Docker not ready yet — retrying in 15 seconds..."
+                                sleep 15
+                            done
+                        """
+
                         // ── Zero-downtime container swap ──
                         sh """
                             # Pull the new image first
@@ -165,7 +182,7 @@ pipeline {
                             ${sshCmd} "sudo docker stop foodexpress-js || true"
                             ${sshCmd} "sudo docker rm foodexpress-js || true"
 
-                            # Rename new container to production name and remap to port 5000
+                            # Re-run on production port 5000
                             ${sshCmd} "sudo docker stop foodexpress-js-new"
                             ${sshCmd} "sudo docker rm foodexpress-js-new"
                             ${sshCmd} "sudo docker run -d --name foodexpress-js -p 5000:5000 ${dockerUser}/${env.DOCKER_IMAGE_NAME}:latest"
@@ -187,7 +204,7 @@ pipeline {
     post {
         always {
             script {
-                // Stash the Terraform state BEFORE cleaning workspace
+                // Stash Terraform state BEFORE cleaning workspace
                 def stateFile = "${env.WORKSPACE}/${env.TF_DIR}/terraform.tfstate"
                 if (fileExists(stateFile)) {
                     dir("${env.TF_DIR}") {
