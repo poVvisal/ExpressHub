@@ -134,7 +134,6 @@ pipeline {
                         def dockerUser = DOCKER_USERNAME.toLowerCase()
                         def sshCommand = "ssh -o StrictHostKeyChecking=no -i \$SSH_KEY ubuntu@${EC2_IP}"
                         
-                        // Use double quotes for ssh commands so Groovy injects the image name and username perfectly
                         sh """
                             ${sshCommand} "sudo docker pull ${dockerUser}/${env.DOCKER_IMAGE_NAME}:latest"
                             ${sshCommand} "sudo docker stop foodexpress-js || true"

@@ -73,6 +73,6 @@ app.get('/{*path}', (req, res) => {
   res.sendFile(path.join(__dirname, 'frontend', 'index.html'));
 });
 
-app.listen(3000, () => {
-  console.log('FoodExpress server is running on http://localhost:3000');
+app.listen(5000, () => {
+  console.log('FoodExpress server is running on http://localhost:5000');
 });
