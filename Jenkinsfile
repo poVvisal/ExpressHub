@@ -125,13 +125,16 @@ pipeline {
                     }
                     
                     withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME'), sshUserPrivateKey(credentialsId: 'ec2-ssh-key', keyFileVariable: 'SSH_KEY')]) {
-                        def sshCommand = "ssh -o StrictHostKeyChecking=no -i ${SSH_KEY} ubuntu@${EC2_IP}"
+                        echo "Waiting for EC2 instance to initialize SSH..."
+                        sleep(time: 60, unit: 'SECONDS')
+                        
+                        def sshCommand = "ssh -o StrictHostKeyChecking=no -i \\$SSH_KEY ubuntu@${EC2_IP}"
                         sh """
-                            ${sshCommand} 'echo "\$DOCKER_PASSWORD" | sudo docker login -u "\$DOCKER_USERNAME" --password-stdin'
-                            ${sshCommand} 'sudo docker pull \$DOCKER_USERNAME/${DOCKER_IMAGE_NAME}:latest'
+                            ${sshCommand} 'echo "\\$DOCKER_PASSWORD" | sudo docker login -u "\\$DOCKER_USERNAME" --password-stdin'
+                            ${sshCommand} 'sudo docker pull \\$DOCKER_USERNAME/${DOCKER_IMAGE_NAME}:latest'
                             ${sshCommand} 'sudo docker stop foodexpress-js || true'
                             ${sshCommand} 'sudo docker rm foodexpress-js || true'
-                            ${sshCommand} 'sudo docker run -d --name foodexpress-js -p 3000:3000 \$DOCKER_USERNAME/${DOCKER_IMAGE_NAME}:latest'
+                            ${sshCommand} 'sudo docker run -d --name foodexpress-js -p 3000:3000 \\$DOCKER_USERNAME/${DOCKER_IMAGE_NAME}:latest'
                         """
                     }
                 }
