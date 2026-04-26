@@ -16,13 +16,26 @@ pipeline {
         TF_VAR_existing_security_group_id = "sg-0795c0d85a643e9b5"
         TF_VAR_existing_key_name          = "new-key"
 
-        TF_DIR                = "terraform/dev"
-        SONAR_SCANNER_HOME    = tool 'sonar-scanner'
-        PATH                  = "${SONAR_SCANNER_HOME}/bin:${env.PATH}"
-        DOCKER_IMAGE_NAME     = "expresshub-app"
+        TF_DIR             = "terraform/dev"
+        SONAR_SCANNER_HOME = tool 'sonar-scanner'
+        PATH               = "${SONAR_SCANNER_HOME}/bin:${env.PATH}"
+        DOCKER_IMAGE_NAME  = "expresshub-app"
     }
 
     stages {
+
+        stage('Restore Terraform State') {
+            steps {
+                script {
+                    try {
+                        unstash 'tfstate'
+                        echo '✅ Restored previous Terraform state.'
+                    } catch (e) {
+                        echo '⚠️ No previous Terraform state found — this may be the first run.'
+                    }
+                }
+            }
+        }
 
         stage('Clone Repository') {
             steps {
@@ -109,8 +122,17 @@ pipeline {
             steps {
                 dir("${env.TF_DIR}") {
                     sh 'terraform init'
-                    sh 'terraform plan -out=tfplan'
-                    sh 'terraform apply -auto-approve tfplan'
+                    script {
+                        def plan = sh(script: 'terraform plan -detailed-exitcode -out=tfplan', returnStatus: true)
+                        if (plan == 2) {
+                            echo '🔧 Infrastructure changes detected — applying...'
+                            sh 'terraform apply -auto-approve tfplan'
+                        } else if (plan == 0) {
+                            echo '✅ No infrastructure changes detected — skipping apply.'
+                        } else {
+                            error '❌ Terraform plan failed.'
+                        }
+                    }
                 }
             }
         }
@@ -122,18 +144,14 @@ pipeline {
                     dir("${env.TF_DIR}") {
                         EC2_IP = sh(script: "terraform output -raw public_ip", returnStdout: true).trim()
                     }
-                    
+
                     withCredentials([
-                        usernamePassword(credentialsId: 'docker-hub-credentials', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME'), 
+                        usernamePassword(credentialsId: 'docker-hub-credentials', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME'),
                         sshUserPrivateKey(credentialsId: 'ec2-ssh-key', keyFileVariable: 'SSH_KEY')
                     ]) {
-                        echo "Waiting for EC2 instance to initialize SSH and finish user_data installation..."
-                        sleep(time: 90, unit: 'SECONDS')
-                        
-                        // Force Docker username to lowercase and allow Groovy to resolve it locally
                         def dockerUser = DOCKER_USERNAME.toLowerCase()
                         def sshCommand = "ssh -o StrictHostKeyChecking=no -i \$SSH_KEY ubuntu@${EC2_IP}"
-                        
+
                         sh """
                             ${sshCommand} "sudo docker pull ${dockerUser}/${env.DOCKER_IMAGE_NAME}:latest"
                             ${sshCommand} "sudo docker stop foodexpress-js || true"
@@ -147,28 +165,29 @@ pipeline {
     }
 
     post {
-        failure {
-            echo '❌ Pipeline failed!'
+        always {
             script {
+                // Stash the Terraform state BEFORE cleaning workspace
                 def stateFile = "${env.WORKSPACE}/${env.TF_DIR}/terraform.tfstate"
                 if (fileExists(stateFile)) {
-                    echo '🔥 Destroying Terraform infrastructure due to failure..ah nerb.'
                     dir("${env.TF_DIR}") {
-                        sh 'terraform destroy -auto-approve'
+                        stash name: 'tfstate', includes: 'terraform.tfstate'
+                        echo '📦 Terraform state stashed for next run.'
                     }
-                    echo '✅ Terraform infrastructure destroyed.'
                 } else {
-                    echo '⚠️ No Terraform state found — skipping destroy.'
+                    echo '⚠️ No Terraform state file found to stash.'
                 }
             }
             cleanWs()
             sh 'docker system prune -af'
         }
 
+        failure {
+            echo '❌ Pipeline failed!'
+        }
+
         success {
-            echo '✅ Pipeline completed successfully! Infrastructure is live.'
-            cleanWs()
-            sh 'docker system prune -af'
+            echo '✅ Pipeline completed successfully! Container updated on EC2.'
         }
     }
 }
