@@ -138,7 +138,7 @@ pipeline {
                             ${sshCommand} "sudo docker pull ${dockerUser}/${env.DOCKER_IMAGE_NAME}:latest"
                             ${sshCommand} "sudo docker stop foodexpress-js || true"
                             ${sshCommand} "sudo docker rm foodexpress-js || true"
-                            ${sshCommand} "sudo docker run -d --name foodexpress-js -p 3000:3000 ${dockerUser}/${env.DOCKER_IMAGE_NAME}:latest"
+                            ${sshCommand} "sudo docker run -d --name foodexpress-js -p 5000:5000 ${dockerUser}/${env.DOCKER_IMAGE_NAME}:latest"
                         """
                     }
                 }

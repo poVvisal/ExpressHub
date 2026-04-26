@@ -13,7 +13,7 @@ app.use(helmet());
 
 // Configure CORS to only allow requests from specific origins
 const allowedOrigins = [
-  'http://localhost:3000',
+  'http://localhost:5000',
   // Add your production frontend URL here
   // 'https://your-frontend-domain.com', 
 ];
