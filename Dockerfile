@@ -21,6 +21,6 @@ COPY --chown=appuser:appgroup frontend/      ./frontend/
 # Switch to the non-root user
 USER appuser
 
-EXPOSE 3000
+EXPOSE 5000
 
 CMD ["node", "index.js"]
