@@ -8,12 +8,13 @@ pipeline {
     }
 
     environment {
-        AWS_ACCESS_KEY_ID     = "your-access-key-id"
-        AWS_SECRET_ACCESS_KEY = "your-secret-access-key"
+        // ⚠️ REDACTED: Store these in Jenkins credentials instead of plain text!
+        AWS_ACCESS_KEY_ID     = "REDACTED-ACCESS-KEY"
+        AWS_SECRET_ACCESS_KEY = "REDACTED-SECRET-KEY"
         AWS_DEFAULT_REGION    = "us-east-1"
-        TF_VAR_grafana_password = "your-grafana-password"
-        TF_VAR_existing_security_group_id = "sg-12345678"
-        TF_VAR_existing_key_name          = "key-name"
+        TF_VAR_grafana_password = "REDACTED-PASSWORD"
+        TF_VAR_existing_security_group_id = "sg-0795c0d85a643e9b5"
+        TF_VAR_existing_key_name          = "new-key"
 
         TF_DIR                = "terraform/dev"
         SONAR_SCANNER_HOME    = tool 'sonar-scanner'
@@ -36,7 +37,6 @@ pipeline {
                         sonar-scanner \
                           -Dsonar.projectKey=ExpressHub \
                           -Dsonar.projectName=ExpressHub \
-                          -Dsonar.host.url=http://54.236.11.108:9000 \
                           -Dsonar.sources=.
                     '''
                 }
@@ -130,14 +130,16 @@ pipeline {
                         echo "Waiting for EC2 instance to initialize SSH and finish user_data installation..."
                         sleep(time: 90, unit: 'SECONDS')
                         
+                        // Force Docker username to lowercase and allow Groovy to resolve it locally
+                        def dockerUser = DOCKER_USERNAME.toLowerCase()
                         def sshCommand = "ssh -o StrictHostKeyChecking=no -i \$SSH_KEY ubuntu@${EC2_IP}"
                         
-                        // Pull the latest image (no login required for public repos), remove old container, and start the new one
+                        // Use double quotes for ssh commands so Groovy injects the image name and username perfectly
                         sh """
-                            ${sshCommand} 'sudo docker pull \$DOCKER_USERNAME/${env.DOCKER_IMAGE_NAME}:latest'
-                            ${sshCommand} 'sudo docker stop foodexpress-js || true'
-                            ${sshCommand} 'sudo docker rm foodexpress-js || true'
-                            ${sshCommand} 'sudo docker run -d --name foodexpress-js -p 3000:3000 \$DOCKER_USERNAME/${env.DOCKER_IMAGE_NAME}:latest'
+                            ${sshCommand} "sudo docker pull ${dockerUser}/${env.DOCKER_IMAGE_NAME}:latest"
+                            ${sshCommand} "sudo docker stop foodexpress-js || true"
+                            ${sshCommand} "sudo docker rm foodexpress-js || true"
+                            ${sshCommand} "sudo docker run -d --name foodexpress-js -p 3000:3000 ${dockerUser}/${env.DOCKER_IMAGE_NAME}:latest"
                         """
                     }
                 }
