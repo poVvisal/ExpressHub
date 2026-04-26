@@ -25,6 +25,9 @@ else
   cd /home/ubuntu/ExpressHub
 fi
 
-# 5. Deploy the Monitoring Stack (Infrastructure)
+# 5. Write env file so GF_SECURITY_ADMIN_PASSWORD persists for all future docker-compose runs
+echo "GF_SECURITY_ADMIN_PASSWORD=${grafana_password}" > /home/ubuntu/ExpressHub/build-process/.env
+
+# 6. Deploy the Monitoring Stack (Infrastructure)
 export GF_SECURITY_ADMIN_PASSWORD="${grafana_password}"
-sudo -E docker-compose -f "./build-process/docker-compose.yml" up -d --build
+sudo -E docker-compose -f "/home/ubuntu/ExpressHub/build-process/docker-compose.yml" up -d --build

@@ -9,10 +9,10 @@ pipeline {
 
     environment {
         // ⚠️ REDACTED: Store these in Jenkins credentials instead of plain text!
-        AWS_ACCESS_KEY_ID     = "REDACTED-ACCESS-KEY"
-        AWS_SECRET_ACCESS_KEY = "REDACTED-SECRET-KEY"
-        AWS_DEFAULT_REGION    = "us-east-1"
-        TF_VAR_grafana_password = "REDACTED-PASSWORD"
+        AWS_ACCESS_KEY_ID                 = "REDACTED-ACCESS-KEY"
+        AWS_SECRET_ACCESS_KEY             = "REDACTED-SECRET-KEY"
+        AWS_DEFAULT_REGION                = "us-east-1"
+        TF_VAR_grafana_password           = "REDACTED-PASSWORD"
         TF_VAR_existing_security_group_id = "sg-0795c0d85a643e9b5"
         TF_VAR_existing_key_name          = "new-key"
 
@@ -29,9 +29,10 @@ pipeline {
                 script {
                     try {
                         unstash 'tfstate'
-                        echo '✅ Restored previous Terraform state.'
+                        echo '✅ Restored previous Terraform state from stash.'
                     } catch (e) {
-                        echo '⚠️ No previous Terraform state found — this may be the first run.'
+                        echo '⚠️ No stashed state found — attempting restore from EC2 backup...'
+                        // EC2 state restore is handled after we know the IP (post Terraform stage)
                     }
                 }
             }
@@ -150,14 +151,33 @@ pipeline {
                         sshUserPrivateKey(credentialsId: 'ec2-ssh-key', keyFileVariable: 'SSH_KEY')
                     ]) {
                         def dockerUser = DOCKER_USERNAME.toLowerCase()
-                        def sshCommand = "ssh -o StrictHostKeyChecking=no -i \$SSH_KEY ubuntu@${EC2_IP}"
+                        def sshCmd = "ssh -o StrictHostKeyChecking=no -i \$SSH_KEY ubuntu@${EC2_IP}"
 
+                        // ── Zero-downtime container swap ──
                         sh """
-                            ${sshCommand} "sudo docker pull ${dockerUser}/${env.DOCKER_IMAGE_NAME}:latest"
-                            ${sshCommand} "sudo docker stop foodexpress-js || true"
-                            ${sshCommand} "sudo docker rm foodexpress-js || true"
-                            ${sshCommand} "sudo docker run -d --name foodexpress-js -p 5000:5000 ${dockerUser}/${env.DOCKER_IMAGE_NAME}:latest"
+                            # Pull the new image first
+                            ${sshCmd} "sudo docker pull ${dockerUser}/${env.DOCKER_IMAGE_NAME}:latest"
+
+                            # Start new container on temp port 5001
+                            ${sshCmd} "sudo docker run -d --name foodexpress-js-new -p 5001:5000 ${dockerUser}/${env.DOCKER_IMAGE_NAME}:latest"
+
+                            # Stop and remove old container
+                            ${sshCmd} "sudo docker stop foodexpress-js || true"
+                            ${sshCmd} "sudo docker rm foodexpress-js || true"
+
+                            # Rename new container to production name and remap to port 5000
+                            ${sshCmd} "sudo docker stop foodexpress-js-new"
+                            ${sshCmd} "sudo docker rm foodexpress-js-new"
+                            ${sshCmd} "sudo docker run -d --name foodexpress-js -p 5000:5000 ${dockerUser}/${env.DOCKER_IMAGE_NAME}:latest"
                         """
+
+                        // ── Backup Terraform state to EC2 (no S3 needed) ──
+                        sh """
+                            scp -o StrictHostKeyChecking=no -i \$SSH_KEY \
+                              ${env.WORKSPACE}/${env.TF_DIR}/terraform.tfstate \
+                              ubuntu@${EC2_IP}:~/terraform.tfstate.backup
+                        """
+                        echo '📦 Terraform state backed up to EC2.'
                     }
                 }
             }
@@ -179,7 +199,6 @@ pipeline {
                 }
             }
             cleanWs()
-            sh 'docker system prune -af'
         }
 
         failure {

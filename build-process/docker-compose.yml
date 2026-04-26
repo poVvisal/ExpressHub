@@ -1,11 +1,10 @@
-version: '3.5'
-services:  
+services:
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
     volumes:
       - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus  # Persist Prometheus data  
+      - prometheus_data:/prometheus
     ports:
       - "9090:9090"
     extra_hosts:
@@ -23,8 +22,11 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD}
     ports:
+      - "3000:3000"
+    networks:
       - elastic
     restart: always
+
   node-exporter:
     image: prom/node-exporter:latest
     container_name: node-exporter
@@ -33,7 +35,6 @@ services:
     networks:
       - elastic
     restart: always
-   
 
 volumes:
   prometheus_data:
@@ -42,4 +43,3 @@ volumes:
 networks:
   elastic:
     driver: bridge
-
