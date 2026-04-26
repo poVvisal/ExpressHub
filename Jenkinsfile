@@ -130,7 +130,7 @@ pipeline {
                         
                         def sshCommand = "ssh -o StrictHostKeyChecking=no -i \$SSH_KEY ubuntu@${EC2_IP}"
                         sh """
-                            ${sshCommand} 'sudo docker pull \$DOCKER_USERNAME/${DOCKER_IMAGE_NAME}:latest'
+                            ${sshCommand} 'sudo docker pull kingczin/${DOCKER_IMAGE_NAME}:latest'
                             ${sshCommand} 'sudo docker stop foodexpress-js || true'
                             ${sshCommand} 'sudo docker rm foodexpress-js || true'
                             ${sshCommand} 'sudo docker run -d --name foodexpress-js -p 3000:3000 \$DOCKER_USERNAME/${DOCKER_IMAGE_NAME}:latest'
@@ -153,7 +153,7 @@ pipeline {
                     }
                     echo '✅ Terraform infrastructure destroyed.'
                 } else {
-                    echo '⚠️ No Terraform state found — skipping destroy.'
+                    echo '⚠️ No Terraform state found — skipping `destroy.'
                 }
             }
             cleanWs()
