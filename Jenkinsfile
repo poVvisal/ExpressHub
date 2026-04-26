@@ -7,9 +7,8 @@ pipeline {
         nodejs 'NodeJS'
     }
 
-
     environment {
-        AWS_ACCESS_KEY_ID     = ""your-access-key-id""
+        AWS_ACCESS_KEY_ID     = "your-access-key-id"
         AWS_SECRET_ACCESS_KEY = "your-secret-access-key"
         AWS_DEFAULT_REGION    = "us-east-1"
         TF_VAR_grafana_password = "your-grafana-password"
@@ -124,16 +123,21 @@ pipeline {
                         EC2_IP = sh(script: "terraform output -raw public_ip", returnStdout: true).trim()
                     }
                     
-                    withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME'), sshUserPrivateKey(credentialsId: 'ec2-ssh-key', keyFileVariable: 'SSH_KEY')]) {
-                        echo "Waiting for EC2 instance to initialize SSH..."
-                        sleep(time: 60, unit: 'SECONDS')
+                    withCredentials([
+                        usernamePassword(credentialsId: 'docker-hub-credentials', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME'), 
+                        sshUserPrivateKey(credentialsId: 'ec2-ssh-key', keyFileVariable: 'SSH_KEY')
+                    ]) {
+                        echo "Waiting for EC2 instance to initialize SSH and finish user_data installation..."
+                        sleep(time: 90, unit: 'SECONDS')
                         
                         def sshCommand = "ssh -o StrictHostKeyChecking=no -i \$SSH_KEY ubuntu@${EC2_IP}"
+                        
+                        // Pull the latest image (no login required for public repos), remove old container, and start the new one
                         sh """
-                            ${sshCommand} 'sudo docker pull kingczin/${DOCKER_IMAGE_NAME}:latest'
+                            ${sshCommand} 'sudo docker pull \$DOCKER_USERNAME/${env.DOCKER_IMAGE_NAME}:latest'
                             ${sshCommand} 'sudo docker stop foodexpress-js || true'
                             ${sshCommand} 'sudo docker rm foodexpress-js || true'
-                            ${sshCommand} 'sudo docker run -d --name foodexpress-js -p 3000:3000 \$DOCKER_USERNAME/${DOCKER_IMAGE_NAME}:latest'
+                            ${sshCommand} 'sudo docker run -d --name foodexpress-js -p 3000:3000 \$DOCKER_USERNAME/${env.DOCKER_IMAGE_NAME}:latest'
                         """
                     }
                 }
@@ -153,7 +157,7 @@ pipeline {
                     }
                     echo '✅ Terraform infrastructure destroyed.'
                 } else {
-                    echo '⚠️ No Terraform state found — skipping `destroy.'
+                    echo '⚠️ No Terraform state found — skipping destroy.'
                 }
             }
             cleanWs()

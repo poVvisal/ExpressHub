@@ -1,23 +1,22 @@
 #!/bin/bash
 set -e
 
-# Install Git and Docker
+# 1. Update OS and Install Dependencies
 sudo apt-get update -y
-sudo apt-get install -y git docker.io
+sudo apt-get install -y git docker.io curl
+
+# 2. Configure Docker
 sudo systemctl enable docker
 sudo systemctl start docker
 sudo usermod -aG docker ubuntu
-# Sets read, write, and execute permissions for all users on the Docker socket file
 sudo chmod 777 /var/run/docker.sock
-#Docker compose
+
+# 3. Install Docker Compose
 sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-# Makes the Docker Compose binary executable.
 sudo chmod +x /usr/local/bin/docker-compose
-# Activates the changes made to the user group without requiring a system reboot.
 sudo newgrp docker
 
-# Clone the repository
-# If the directory exists, pull the latest changes
+# 4. Clone the repository for the Monitoring Stack setup
 if [ -d "/home/ubuntu/ExpressHub" ]; then
   cd /home/ubuntu/ExpressHub
   git pull
@@ -26,15 +25,6 @@ else
   cd /home/ubuntu/ExpressHub
 fi
 
-# Build the Docker image
-sudo docker build -t foodexpress-js .
-
-# Run the new container
-sudo docker run -d --name foodexpress-js -p 3000:3000 foodexpress-js
-
-# Set the grafana password locally for the docker-compose execution
+# 5. Deploy the Monitoring Stack (Infrastructure)
 export GF_SECURITY_ADMIN_PASSWORD="${grafana_password}"
-
-# deploying the monitoring stack
 sudo -E docker-compose -f "./build-process/docker-compose.yml" up -d --build
-
