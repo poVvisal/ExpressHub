@@ -73,15 +73,20 @@ pipeline {
             }
         }
 
-        stage('Pull Trivy Image') {
+        stage('Trivy Filesystem Scan') {
             steps {
                 sh '''
-                    set -e
-                    docker pull aquasec/trivy:0.69.3
+                    docker run --rm \
+                      -v $WORKSPACE:/app \
+                      aquasec/trivy:latest fs /app \
+                      --scanners vuln,secret,misconfig \
+                      --exit-code 1 \
+                      --severity HIGH,CRITICAL \
+                      --ignore-unfixed
+                      --skip-dirs terraform 
                 '''
             }
         }
-
         stage('Trivy Filesystem Scan') {
             steps {
                 sh '''
@@ -94,6 +99,9 @@ pipeline {
                       --exit-code 1 \
                       --severity HIGH,CRITICAL \
                       --ignore-unfixed
+                      --skip-dirs terraform \
+                      
+
                 '''
             }
         }
@@ -121,6 +129,7 @@ pipeline {
                       --format template \
                       --template "@contrib/html.tpl" \
                       -o trivy-report.html
+
                 '''
                 archiveArtifacts artifacts: 'trivy-report.html', fingerprint: true
             }
