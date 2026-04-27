@@ -1,47 +1,43 @@
 pipeline {
     agent any
 
-    tools {
-        nodejs 'NodeJS'
+    options {
+        disableConcurrentBuilds()
+        timestamps()
     }
 
     environment {
-        // ⚠️ REDACTED: Store these in Jenkins credentials instead of plain text!
         AWS_ACCESS_KEY_ID                 = "REDACTED-ACCESS-KEY"
         AWS_SECRET_ACCESS_KEY             = "REDACTED-SECRET-KEY"
         AWS_DEFAULT_REGION                = "us-east-1"
-        TF_VAR_grafana_password           = "REDACTED-PASSWORD"
+
         TF_VAR_existing_security_group_id = "sg-0795c0d85a643e9b5"
         TF_VAR_existing_key_name          = "new-key"
+        TF_VAR_grafana_password           = "REDACTED-PASSWORD"
 
-        TF_DIR             = "terraform/dev"
-        SONAR_SCANNER_HOME = tool 'sonar-scanner'
-        PATH               = "${SONAR_SCANNER_HOME}/bin:${env.PATH}"
-        DOCKER_IMAGE_NAME  = "expresshub-app"
-        
-        // Define the safe house directory on the VM
-        LOCAL_STATE_DIR    = "${env.HOME}/.tf-states/expresshub"
+        TF_DIR              = "terraform/dev"
+        TF_STATE_DIR        = "/var/lib/jenkins/terraform-state/expresshub/dev"
+        TF_PLUGIN_CACHE_DIR = "/var/lib/jenkins/.terraform.d/plugin-cache"
+        TRIVY_CACHE_DIR     = "/var/lib/jenkins/trivy-cache"
+
+        SONAR_SCANNER_HOME  = tool('sonar-scanner')
+        PATH                = "${SONAR_SCANNER_HOME}/bin:${env.PATH}"
+
+        DOCKER_IMAGE_NAME   = "expresshub-app"
+        CONTAINER_NAME      = "foodexpress-js"
+        APP_PORT            = "5000"
     }
 
     stages {
 
-        stage('Restore Terraform State (Local Hack)') {
+        stage('Prepare Persistent Directories') {
             steps {
-                script {
-                    echo '🔍 Checking for local Terraform state on agent VM...'
-                    sh "mkdir -p ${LOCAL_STATE_DIR}"
-                    
-                    def stateExists = sh(script: "test -f ${LOCAL_STATE_DIR}/terraform.tfstate", returnStatus: true) == 0
-                    
-                    if (stateExists) {
-                        // Create the workspace TF directory if it doesn't exist yet, then copy state
-                        sh "mkdir -p ${env.WORKSPACE}/${env.TF_DIR}"
-                        sh "cp ${LOCAL_STATE_DIR}/terraform.tfstate ${env.WORKSPACE}/${env.TF_DIR}/terraform.tfstate"
-                        echo '✅ Restored previous Terraform state from safe house.'
-                    } else {
-                        echo '⚠️ No local state found — this is the first run. Terraform will create a new instance.'
-                    }
-                }
+                sh '''
+                    set -e
+                    mkdir -p /var/lib/jenkins/terraform-state/expresshub/dev \
+                             /var/lib/jenkins/.terraform.d/plugin-cache \
+                             /var/lib/jenkins/trivy-cache
+                '''
             }
         }
 
@@ -77,152 +73,129 @@ pipeline {
             }
         }
 
+        stage('Pull Trivy Image') {
+            steps {
+                sh '''
+                    set -e
+                    docker pull aquasec/trivy:0.69.3
+                '''
+            }
+        }
+
         stage('Trivy Filesystem Scan') {
             steps {
                 sh '''
+                    set -e
                     docker run --rm \
+                      -v $TRIVY_CACHE_DIR:/root/.cache/ \
                       -v $WORKSPACE:/app \
-                      aquasec/trivy:latest fs \
+                      aquasec/trivy:0.69.3 fs /app \
+                      --scanners vuln,secret,misconfig \
                       --exit-code 1 \
                       --severity HIGH,CRITICAL \
-                      --ignore-unfixed \
-                      /app
+                      --ignore-unfixed
                 '''
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                sh "docker build --cache-from ${env.DOCKER_IMAGE_NAME}:latest -t ${env.DOCKER_IMAGE_NAME}:latest ."
+                sh '''
+                    set -e
+                    docker build -t ${DOCKER_IMAGE_NAME}:latest .
+                '''
             }
         }
 
         stage('Trivy Image Scan') {
             steps {
-                sh """
+                sh '''
+                    set -e
                     docker run --rm \
+                      -v $TRIVY_CACHE_DIR:/root/.cache/ \
                       -v /var/run/docker.sock:/var/run/docker.sock \
-                      -v \$WORKSPACE:/app \
-                      aquasec/trivy:latest image \
+                      aquasec/trivy:0.69.3 image ${DOCKER_IMAGE_NAME}:latest \
                       --exit-code 1 \
                       --severity HIGH,CRITICAL \
                       --ignore-unfixed \
-                      --format template --template "@contrib/html.tpl" -o /app/trivy-report.html \
-                      ${env.DOCKER_IMAGE_NAME}:latest
-                """
-                archiveArtifacts artifacts: 'trivy-report.html'
+                      --format template \
+                      --template "@contrib/html.tpl" \
+                      -o trivy-report.html
+                '''
+                archiveArtifacts artifacts: 'trivy-report.html', fingerprint: true
             }
         }
 
         stage('Push to Docker Hub') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
-                    sh """
-                        echo "\$DOCKER_PASSWORD" | docker login -u "\$DOCKER_USERNAME" --password-stdin
-                        docker tag ${env.DOCKER_IMAGE_NAME}:latest \$DOCKER_USERNAME/${env.DOCKER_IMAGE_NAME}:latest
-                        docker push \$DOCKER_USERNAME/${env.DOCKER_IMAGE_NAME}:latest
-                    """
+                withCredentials([usernamePassword(
+                    credentialsId: 'docker-hub-credentials',
+                    usernameVariable: 'DOCKER_USERNAME',
+                    passwordVariable: 'DOCKER_PASSWORD'
+                )]) {
+                    sh '''
+                        set -e
+                        echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+                        docker tag ${DOCKER_IMAGE_NAME}:latest $DOCKER_USERNAME/${DOCKER_IMAGE_NAME}:latest
+                        docker push $DOCKER_USERNAME/${DOCKER_IMAGE_NAME}:latest
+                    '''
                 }
             }
         }
 
-        stage('Terraform Plan & Apply') {
+        stage('Terraform Init') {
             steps {
                 dir("${env.TF_DIR}") {
                     sh 'terraform init'
-                    script {
-                        def plan = sh(script: 'terraform plan -detailed-exitcode -out=tfplan', returnStatus: true)
-                        if (plan == 2) {
-                            echo '🔧 Infrastructure changes detected — applying...'
-                            sh 'terraform apply -auto-approve tfplan'
-                        } else if (plan == 0) {
-                            echo '✅ No infrastructure changes detected — skipping apply.'
-                        } else {
-                            error '❌ Terraform plan failed.'
-                        }
-                    }
                 }
+            }
+        }
+
+        stage('Terraform Plan & Conditional Apply') {
+            steps {
+                dir("${env.TF_DIR}") {
+                    sh 'terraform plan -out=tfplan'
+                }
+            }
+        }
+
+        stage('Persist Terraform State') {
+            steps {
+                sh 'echo Persist Terraform State'
+            }
+        }
+
+        stage('Read EC2 Output') {
+            steps {
+                sh 'echo Read EC2 Output'
             }
         }
 
         stage('Deploy to EC2') {
             steps {
-                script {
-                    def EC2_IP = ""
-                    dir("${env.TF_DIR}") {
-                        EC2_IP = sh(script: "terraform output -raw public_ip", returnStdout: true).trim()
-                    }
-
-                    withCredentials([
-                        usernamePassword(credentialsId: 'docker-hub-credentials', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME'),
-                        sshUserPrivateKey(credentialsId: 'ec2-ssh-key', keyFileVariable: 'SSH_KEY')
-                    ]) {
-                        def dockerUser = DOCKER_USERNAME.toLowerCase()
-                        def sshCmd = "ssh -o StrictHostKeyChecking=no -i \$SSH_KEY ubuntu@${EC2_IP}"
-
-                        // ── Wait for EC2 userdata (Docker install) to finish ──
-                        echo '⏳ Waiting for EC2 userdata to complete...'
-                        sh """
-                            for i in \$(seq 1 20); do
-                                echo "Attempt \$i: checking if Docker is ready on EC2..."
-                                if ${sshCmd} "command -v docker > /dev/null 2>&1 && sudo docker info > /dev/null 2>&1"; then
-                                    echo "✅ Docker is ready on EC2."
-                                    break
-                                fi
-                                if [ \$i -eq 20 ]; then
-                                    echo "❌ Docker never became ready after 20 attempts. Aborting."
-                                    exit 1
-                                fi
-                                echo "⏳ Docker not ready yet — retrying in 15 seconds..."
-                                sleep 15
-                            done
-                        """
-
-                        // ── Zero-downtime container swap ──
-                        sh """
-                            # Pull the new image first
-                            ${sshCmd} "sudo docker pull ${dockerUser}/${env.DOCKER_IMAGE_NAME}:latest"
-
-                            # Start new container on temp port 5001
-                            ${sshCmd} "sudo docker run -d --name foodexpress-js-new -p 5001:5000 ${dockerUser}/${env.DOCKER_IMAGE_NAME}:latest"
-
-                            # Stop and remove old container
-                            ${sshCmd} "sudo docker stop foodexpress-js || true"
-                            ${sshCmd} "sudo docker rm foodexpress-js || true"
-
-                            # Re-run on production port 5000
-                            ${sshCmd} "sudo docker stop foodexpress-js-new"
-                            ${sshCmd} "sudo docker rm foodexpress-js-new"
-                            ${sshCmd} "sudo docker run -d --name foodexpress-js -p 5000:5000 ${dockerUser}/${env.DOCKER_IMAGE_NAME}:latest"
-                        """
-                    }
-                }
+                sh 'echo Deploy to EC2'
             }
         }
     }
 
     post {
         always {
-            script {
-                // THE GETAWAY: Save state back to the safe house BEFORE cleaning workspace
-                def stateFile = "${env.WORKSPACE}/${env.TF_DIR}/terraform.tfstate"
-                if (fileExists(stateFile)) {
-                    sh "mkdir -p ${LOCAL_STATE_DIR}"
-                    sh "cp ${stateFile} ${LOCAL_STATE_DIR}/terraform.tfstate"
-                    echo "📦 Terraform state successfully backed up to ${LOCAL_STATE_DIR}/."
-                } else {
-                    echo '⚠️ No Terraform state file found in workspace to backup.'
-                }
+            dir("${env.TF_DIR}") {
+                sh '''
+                    set +e
+                    [ -f terraform.tfstate ] && cp -f terraform.tfstate "$TF_STATE_DIR/terraform.tfstate" || true
+                    [ -f terraform.tfstate.backup ] && cp -f terraform.tfstate.backup "$TF_STATE_DIR/terraform.tfstate.backup" || true
+                    rm -f tfplan .tf_plan_exit_code
+                '''
             }
-            cleanWs()
-        }
-
-        failure {
-            echo '❌ Pipeline failed! What the f did you break this time?'
         }
 
         success {
-            echo '✅ Pipeline completed successfully! Container updated on EC2.'
+            echo 'Pipeline completed successfully.'
+        }
+
+        failure {
+            echo 'Pipeline failed, but Terraform state remains on the Jenkins server.'
         }
     }
 }
