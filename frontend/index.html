@@ -275,19 +275,24 @@
     <!-- Visual menu selection (UI-only) -->
     <div class="menu-samples" aria-hidden="false">
       <div class="menu-item">
-        <img class="menu-thumb" data-src="/photo-1601924582975-4ed8f0f0b9e2" alt="Pepperoni Pizza">
+        <img class="menu-thumb" data-src="https://images.unsplash.com/photo-1601924582975-4ed8f0f0b9e2" alt="Pepperoni Pizza">
         <div class="menu-meta">Pepperoni Pizza — $14.99</div>
         <button class="order-btn" onclick="placeOrder('Pepperoni Pizza', 14.99)">Order</button>
       </div>
       <div class="menu-item">
-        <img class="menu-thumb" data-src="/photo-1543332164-8b8a63e7b7dd" alt="Sushi Platter">
+        <img class="menu-thumb" data-src="https://images.unsplash.com/photo-1543332164-8b8a63e7b7dd" alt="Sushi Platter">
         <div class="menu-meta">Sushi Platter — $18.50</div>
         <button class="order-btn" onclick="placeOrder('Sushi Platter', 18.5)">Order</button>
       </div>
       <div class="menu-item">
-        <img class="menu-thumb" data-src="/photo-1543353071-087092ec393f" alt="Cheeseburger">
+        <img class="menu-thumb" data-src="https://images.unsplash.com/photo-1543353071-087092ec393f" alt="Cheeseburger">
         <div class="menu-meta">Double Cheeseburger — $9.99</div>
         <button class="order-btn" onclick="placeOrder('Double Cheeseburger', 9.99)">Order</button>
+      </div>
+      <div class="menu-item">
+        <img class="menu-thumb" data-src="https://images.unsplash.com/photo-1604908177522-0b6f2f6f2a5b" alt="Chocolate Cake">
+        <div class="menu-meta">Chocolate Lava Cake — $4.99</div>
+        <button class="order-btn" onclick="placeOrder('Chocolate Lava Cake', 4.99)">Order</button>
       </div>
     </div>
   </div>
@@ -351,8 +356,10 @@
   document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('img[data-src]').forEach(img => {
       const path = img.getAttribute('data-src');
+      // If the data-src is already a full URL, use it; otherwise prefix IMAGE_CDN
+      const base = path.startsWith('http') ? path : `${IMAGE_CDN}${path}`;
       // append sizing parameters; object-fit: contain prevents crop/stretch
-      img.src = `${IMAGE_CDN}${path}?auto=format&fm=jpg&q=80&w=600&fit=contain`;
+      img.src = `${base}${base.includes('?') ? '&' : '?'}auto=format&fm=jpg&q=80&w=600&fit=contain`;
     });
   });
 
