@@ -4,6 +4,7 @@ pipeline {
     options {
         disableConcurrentBuilds()
         timestamps()
+        buildDiscarder(logRotator(numToKeepStr: '20', artifactNumToKeepStr: '10'))
     }
 
     environment {
@@ -80,14 +81,12 @@ pipeline {
                     docker run --rm \
                       -v $TRIVY_CACHE_DIR:/root/.cache/ \
                       -v $WORKSPACE:/app \
-                      aquasec/trivy:0.69.3 fs /app \
+                      aquasec/trivy:latest fs /app \
                       --scanners vuln,secret,misconfig \
                       --exit-code 1 \
                       --severity HIGH,CRITICAL \
-                      --ignore-unfixed
-                      --skip-dirs terraform \
-                      
-
+                      --ignore-unfixed \
+                      --skip-dirs /app/terraform
                 '''
             }
         }
@@ -183,6 +182,14 @@ pipeline {
                     rm -f tfplan .tf_plan_exit_code
                 '''
             }
+            sh '''
+                set +e
+                find "$TRIVY_CACHE_DIR" -type f -mtime +7 -delete || true
+                find "$TF_PLUGIN_CACHE_DIR" -type f -mtime +30 -delete || true
+                docker image prune -af --filter "until=168h" || true
+                docker builder prune -af --filter "until=168h" || true
+            '''
+            cleanWs(deleteDirs: true, disableDeferredWipeout: true)
         }
 
         success {
