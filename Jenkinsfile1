@@ -76,20 +76,6 @@ pipeline {
         stage('Trivy Filesystem Scan') {
             steps {
                 sh '''
-                    docker run --rm \
-                      -v $WORKSPACE:/app \
-                      aquasec/trivy:latest fs /app \
-                      --scanners vuln,secret,misconfig \
-                      --exit-code 1 \
-                      --severity HIGH,CRITICAL \
-                      --ignore-unfixed
-                      --skip-dirs terraform 
-                '''
-            }
-        }
-        stage('Trivy Filesystem Scan') {
-            steps {
-                sh '''
                     set -e
                     docker run --rm \
                       -v $TRIVY_CACHE_DIR:/root/.cache/ \
