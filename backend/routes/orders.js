@@ -1,8 +1,17 @@
 const express = require('express');
 const router = express.Router();
 
-const orders = [];
-let nextId = 1;
+const orders = [
+  {
+    id: 1,
+    item: 'Margherita Pizza',
+    quantity: 2,
+    address: '42 Hunger Lane',
+    status: 'Out for Delivery',
+    placedAt: new Date().toISOString(),
+  },
+];
+let nextId = 2;
 
 router.get('/', (req, res) => {
   res.json({
