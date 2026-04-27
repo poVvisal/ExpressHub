@@ -1,14 +1,7 @@
 pipeline {
-    agent {
-        label 'agent2'
-    }
-
-    tools {
-        nodejs 'NodeJS'
-    }
+    agent any
 
     environment {
-        // ⚠️ REDACTED: Store these in Jenkins credentials instead of plain text!
         AWS_ACCESS_KEY_ID                 = "REDACTED-ACCESS-KEY"
         AWS_SECRET_ACCESS_KEY             = "REDACTED-SECRET-KEY"
         AWS_DEFAULT_REGION                = "us-east-1"

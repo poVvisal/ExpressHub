@@ -1,7 +1,5 @@
 pipeline {
-    agent {
-        label 'agent2' // ⚠️ CRITICAL: agent2 MUST be a persistent VM, not an ephemeral Docker container.
-    }
+    agent any
 
     tools {
         nodejs 'NodeJS'
