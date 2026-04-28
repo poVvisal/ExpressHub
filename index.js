@@ -11,6 +11,27 @@ app.disable('x-powered-by');
 // Use Helmet to set various security headers
 app.use(helmet());
 
+// Configure Helmet with custom CSP to allow inline scripts and local images
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrcAttr: ["'unsafe-inline'"],
+      imgSrc: ["'self'", "data:"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      connectSrc: ["'self'"],
+    },
+  },
+}));
+
+// Allow inline event handlers and attributes
+app.use((req, res, next) => {
+  res.setHeader('Content-Security-Policy', 
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; script-src-attr 'unsafe-inline'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'");
+  next();
+});
+
 // Configure CORS to only allow requests from specific origins
 const allowedOrigins = [
   'http://localhost:5000',
