@@ -8,12 +8,12 @@ pipeline {
     }
 
     environment {
-        AWS_ACCESS_KEY_ID                 = "REDACTED-ACCESS-KEY"
-        AWS_SECRET_ACCESS_KEY             = "REDACTED-SECRET"
+        AWS_ACCESS_KEY_ID                 = "accesskey123"
+        AWS_SECRET_ACCESS_KEY             = "secretkey123"
         AWS_DEFAULT_REGION                = "us-east-1"
-        TF_VAR_existing_security_group_id = "sg-123456789abcdef0"
+        TF_VAR_existing_security_group_id = "sg-12345678"
         TF_VAR_existing_key_name          = "final"
-        TF_VAR_grafana_password           = "REDACTED-PASSWORD"
+        TF_VAR_grafana_password           = "khmer4ever"
 
         TF_DIR                            = "terraform/dev"
         TF_STATE_DIR                      = "/var/lib/jenkins/terraform-state/expresshub/dev"
@@ -281,7 +281,7 @@ pipeline {
                 dir("${env.TF_DIR}") {
                     sh '''
                         set -e
-                        # Use correct output names: public_ip and instance_id
+                        # Use correct output names from your Terraform state
                         terraform output -raw public_ip > "$WORKSPACE/ec2_public_ip.txt"
                         if terraform output instance_id >/dev/null 2>&1; then
                             terraform output -raw instance_id > "$WORKSPACE/ec2_instance_id.txt"
@@ -347,6 +347,9 @@ pipeline {
                         cat > deploy-ec2.sh <<'REMOTE_SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail
+
+# Fix non-interactive PATH so that Docker is found
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 IMAGE_REF="$1"
 CONTAINER_NAME="$2"
