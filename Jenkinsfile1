@@ -8,6 +8,7 @@ pipeline {
     }
 
     environment {
+        // TODO: move these into Jenkins credentials ASAP
         AWS_ACCESS_KEY_ID                 = "accesskey123"
         AWS_SECRET_ACCESS_KEY             = "secretkey123"
         AWS_DEFAULT_REGION                = "us-east-1"
@@ -34,7 +35,6 @@ pipeline {
     }
 
     stages {
-
         stage('Prepare Persistent Directories') {
             steps {
                 sh '''
@@ -190,15 +190,15 @@ pipeline {
                     sh '''
                         set -e
                         if [ -f "$TF_STATE_DIR/terraform.tfstate" ]; then
-                          cp -f "$TF_STATE_DIR/terraform.tfstate" terraform.tfstate
-                          echo "Restored terraform.tfstate from Jenkins storage."
+                            cp -f "$TF_STATE_DIR/terraform.tfstate" terraform.tfstate
+                            echo "Restored terraform.tfstate from Jenkins storage."
                         else
-                          echo "No existing terraform.tfstate backup found. Proceeding with fresh state."
+                            echo "No existing terraform.tfstate backup found. Proceeding with fresh state."
                         fi
 
                         if [ -f "$TF_STATE_DIR/terraform.tfstate.backup" ]; then
-                          cp -f "$TF_STATE_DIR/terraform.tfstate.backup" terraform.tfstate.backup
-                          echo "Restored terraform.tfstate.backup from Jenkins storage."
+                            cp -f "$TF_STATE_DIR/terraform.tfstate.backup" terraform.tfstate.backup
+                            echo "Restored terraform.tfstate.backup from Jenkins storage."
                         fi
                     '''
                 }
@@ -278,246 +278,281 @@ pipeline {
             }
         }
 
-        stage('Read EC2 Output') {
+        stage('Read EC2 Outputs') {
             steps {
-                dir("${env.TF_DIR}") {
-                    sh '''
-                        set -e
-                        # Ensure we have a JSON outputs file in the workspace (created by Apply stage)
-                        if [ ! -f "$WORKSPACE/terraform-outputs.json" ]; then
-                          terraform output -json > "$WORKSPACE/terraform-outputs.json"
-                        fi
+                sh '''
+                    set -e
 
-                        python3 - <<'PY'
-import json,sys
-o = json.load(open('$WORKSPACE/terraform-outputs.json'))
-ips = []
-if 'public_ip' in o:
-    val = o['public_ip'].get('value')
-    if isinstance(val, list):
-        ips = val
-    elif isinstance(val, str):
-        ips = [val]
+                    if [ ! -f "$WORKSPACE/terraform-outputs.json" ]; then
+                        echo "terraform-outputs.json not found"
+                        exit 1
+                    fi
 
-with open('$WORKSPACE/ec2_public_ips.txt','w') as f:
-    for ip in ips:
-        f.write(ip + "\n")
-print(len(ips))
+                    python3 <<'PY'
+import json
+
+with open("terraform-outputs.json") as f:
+    data = json.load(f)
+
+if "public_ip" not in data:
+    raise SystemExit("Missing terraform output: public_ip")
+
+val = data["public_ip"]["value"]
+ips = val if isinstance(val, list) else [val]
+ips = [str(ip).strip() for ip in ips if str(ip).strip()]
+
+if not ips:
+    raise SystemExit("No EC2 public IPs found")
+
+with open("ec2_public_ips.txt", "w") as out:
+    out.write("\\n".join(ips) + "\\n")
+
+print(f"Public IPs extracted: {len(ips)}")
 PY
 
-                        cat "$WORKSPACE/ec2_public_ips.txt" || true
+                    echo "Public IPs to deploy:"
+                    cat "$WORKSPACE/ec2_public_ips.txt"
+                '''
+                archiveArtifacts artifacts: 'ec2_public_ips.txt', fingerprint: true
+            }
+        }
+
+        stage('Wait for EC2 SSH') {
+            steps {
+                withCredentials([
+                    sshUserPrivateKey(
+                        credentialsId: 'ec2-ssh-key',
+                        keyFileVariable: 'SSH_KEY_FILE',
+                        usernameVariable: 'SSH_USER'
+                    )
+                ]) {
+                    sh '''
+                        set -e
+                        chmod 600 "$SSH_KEY_FILE"
+                        FAILED=0
+
+                        if [ ! -f "$WORKSPACE/ec2_public_ips.txt" ]; then
+                            echo "No EC2 IPs file found; aborting"
+                            exit 1
+                        fi
+
+                        while IFS= read -r EC2_HOST || [ -n "$EC2_HOST" ]; do
+                            [ -z "$EC2_HOST" ] && continue
+
+                            echo "Waiting for SSH on $EC2_HOST"
+                            READY=0
+
+                            for i in $(seq 1 24); do
+                                if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i "$SSH_KEY_FILE" "$SSH_USER@$EC2_HOST" 'echo ok' >/dev/null 2>&1; then
+                                    echo "$EC2_HOST: SSH ready"
+                                    READY=1
+                                    break
+                                fi
+                                echo "$EC2_HOST: waiting... attempt $i/24"
+                                sleep 10
+                            done
+
+                            if [ "$READY" -ne 1 ]; then
+                                echo "$EC2_HOST: SSH not ready"
+                                FAILED=1
+                            fi
+                        done < "$WORKSPACE/ec2_public_ips.txt"
+
+                        if [ "$FAILED" -ne 0 ]; then
+                            echo "One or more hosts failed SSH readiness"
+                            exit 1
+                        fi
                     '''
                 }
             }
         }
 
-                stage('Wait for EC2 SSH') {
-                        steps {
-                                withCredentials([
-                                        sshUserPrivateKey(
-                                                credentialsId: 'ec2-ssh-key',
-                                                keyFileVariable: 'SSH_KEY_FILE',
-                                                usernameVariable: 'SSH_USER'
-                                        )
-                                ]) {
-                                        sh '''
-                                                set -e
-                                                chmod 600 "$SSH_KEY_FILE"
-                                                FAILED=0
-                                                if [ ! -f "$WORKSPACE/ec2_public_ips.txt" ]; then
-                                                    echo "No EC2 IPs file found; aborting"
-                                                    exit 1
-                                                fi
+        stage('Deploy to EC2') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'docker-hub-credentials',
+                        usernameVariable: 'DOCKER_USERNAME',
+                        passwordVariable: 'DOCKER_PASSWORD'
+                    ),
+                    sshUserPrivateKey(
+                        credentialsId: 'ec2-ssh-key',
+                        keyFileVariable: 'SSH_KEY_FILE',
+                        usernameVariable: 'SSH_USER'
+                    )
+                ]) {
+                    sh '''
+                        set -euo pipefail
+                        chmod 600 "$SSH_KEY_FILE"
 
-                                                while read -r EC2_HOST; do
-                                                    if [ -z "$EC2_HOST" ]; then
-                                                        continue
-                                                    fi
-                                                    echo "Waiting for SSH on $EC2_HOST"
-                                                    READY=0
-                                                    for i in $(seq 1 18); do
-                                                        if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i "$SSH_KEY_FILE" "$SSH_USER@$EC2_HOST" 'echo ok' >/dev/null 2>&1; then
-                                                            echo "$EC2_HOST: SSH ready"
-                                                            READY=1
-                                                            break
-                                                        fi
-                                                        echo "$EC2_HOST: waiting... attempt $i/18"
-                                                        sleep 10
-                                                    done
-                                                    if [ "$READY" -ne 1 ]; then
-                                                        echo "$EC2_HOST: SSH did not become ready"
-                                                        FAILED=1
-                                                    fi
-                                                done < "$WORKSPACE/ec2_public_ips.txt"
+                        IMAGE_REF=$(cat "$WORKSPACE/image_ref.txt")
+                        FAILED=0
 
-                                                if [ "$FAILED" -ne 0 ]; then
-                                                    echo "One or more hosts failed SSH readiness"
-                                                    exit 1
-                                                fi
-                                        '''
-                                }
-                        }
-                }
-
-                stage('Deploy to EC2') {
-                        steps {
-                                withCredentials([
-                                        usernamePassword(
-                                                credentialsId: 'docker-hub-credentials',
-                                                usernameVariable: 'DOCKER_USERNAME',
-                                                passwordVariable: 'DOCKER_PASSWORD'
-                                        ),
-                                        sshUserPrivateKey(
-                                                credentialsId: 'ec2-ssh-key',
-                                                keyFileVariable: 'SSH_KEY_FILE',
-                                                usernameVariable: 'SSH_USER'
-                                        )
-                                ]) {
-                                        sh '''
-                                                set -e
-
-                                                chmod 600 "$SSH_KEY_FILE"
-                                                IMAGE_REF=$(cat "$WORKSPACE/image_ref.txt")
-
-                                                cat > deploy-ec2.sh <<'REMOTE_SCRIPT'
+                        cat > deploy-ec2.sh <<'REMOTE_SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Fix non-interactive PATH so that Docker is found
-export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+IMAGE_REF="${IMAGE_REF:?missing IMAGE_REF}"
+CONTAINER_NAME="${CONTAINER_NAME:?missing CONTAINER_NAME}"
+APP_PORT="${APP_PORT:?missing APP_PORT}"
+HEALTHCHECK_PATH="${HEALTHCHECK_PATH:?missing HEALTHCHECK_PATH}"
+DOCKER_USERNAME="${DOCKER_USERNAME:?missing DOCKER_USERNAME}"
+DOCKER_PASSWORD="${DOCKER_PASSWORD:?missing DOCKER_PASSWORD}"
 
-IMAGE_REF="$1"
-CONTAINER_NAME="$2"
-APP_PORT="$3"
-HEALTHCHECK_PATH="$4"
-DOCKER_USERNAME="$5"
-DOCKER_PASSWORD="$6"
-
-OLD_CONTAINER="${CONTAINER_NAME}-previous"
 HEALTH_URL="http://localhost:${APP_PORT}${HEALTHCHECK_PATH}"
+OLD_CONTAINER="${CONTAINER_NAME}-previous"
 
-http_health_check() {
-    if command -v python3 >/dev/null 2>&1; then
-        python3 - "$HEALTH_URL" <<'PY'
-import sys
-import urllib.request
+log() {
+  echo "[$(date '+%F %T')] $*"
+}
+
+health_check() {
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsS --max-time 5 "$HEALTH_URL" >/dev/null
+    return $?
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q --spider --timeout=5 "$HEALTH_URL"
+    return $?
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 - "$HEALTH_URL" <<'PY'
+import sys, urllib.request
 url = sys.argv[1]
 try:
-        with urllib.request.urlopen(url, timeout=5) as r:
-                code = getattr(r, "status", r.getcode())
-                sys.exit(0 if 200 <= code < 300 else 1)
+    with urllib.request.urlopen(url, timeout=5) as r:
+        code = getattr(r, "status", r.getcode())
+        sys.exit(0 if 200 <= code < 300 else 1)
 except Exception:
-        sys.exit(1)
+    sys.exit(1)
 PY
-        return $?
-    fi
-
-    if command -v wget >/dev/null 2>&1; then
-        wget -q --spider --timeout=5 "$HEALTH_URL"
-        return $?
-    fi
-
-    return 127
+    return $?
+  fi
+  return 1
 }
 
-tcp_health_check() {
-    if command -v bash >/dev/null 2>&1; then
-        timeout 3 bash -c "</dev/tcp/localhost/${APP_PORT}" >/dev/null 2>&1
-        return $?
-    fi
-    return 127
-}
+log "docker version"
+docker --version
 
+log "docker login"
 echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+
+log "docker pull $IMAGE_REF"
 docker pull "$IMAGE_REF"
 
+log "verify image exists"
+docker image inspect "$IMAGE_REF" >/dev/null
+
 if docker ps -a --format '{{.Names}}' | grep -qx "$OLD_CONTAINER"; then
-    docker rm -f "$OLD_CONTAINER" || true
+  docker rm -f "$OLD_CONTAINER" || true
 fi
 
 if docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER_NAME"; then
-    docker stop "$CONTAINER_NAME" || true
-    docker rename "$CONTAINER_NAME" "$OLD_CONTAINER"
+  docker stop "$CONTAINER_NAME" || true
+  docker rename "$CONTAINER_NAME" "$OLD_CONTAINER"
 fi
 
+log "starting container"
 docker run -d \
-    --name "$CONTAINER_NAME" \
-    --restart unless-stopped \
-    -p "${APP_PORT}:${APP_PORT}" \
-    "$IMAGE_REF"
+  --name "$CONTAINER_NAME" \
+  --restart unless-stopped \
+  -p "${APP_PORT}:${APP_PORT}" \
+  "$IMAGE_REF"
+
+log "docker ps -a after start"
+docker ps -a
 
 for i in $(seq 1 18); do
-    if http_health_check; then
-        echo "Application HTTP health check passed: $HEALTH_URL"
-        docker rm -f "$OLD_CONTAINER" >/dev/null 2>&1 || true
-        exit 0
-    fi
-    http_status=$?
+  if health_check; then
+    log "health check passed: $HEALTH_URL"
+    docker rm -f "$OLD_CONTAINER" >/dev/null 2>&1 || true
+    exit 0
+  fi
 
-    if [ "$http_status" -eq 127 ] && tcp_health_check; then
-        echo "HTTP check tools unavailable; TCP port ${APP_PORT} is reachable"
-        docker rm -f "$OLD_CONTAINER" >/dev/null 2>&1 || true
-        exit 0
-    fi
+  if ! docker ps --format '{{.Names}}' | grep -qx "$CONTAINER_NAME"; then
+    log "container stopped unexpectedly"
+    docker ps -a || true
+    docker logs "$CONTAINER_NAME" || true
+    exit 1
+  fi
 
-    echo "Waiting for application health... attempt $i/18"
-    sleep 10
+  log "waiting for health check $i/18"
+  sleep 10
 done
 
-echo "New container failed health check, initiating rollback."
+log "health check failed"
 docker logs "$CONTAINER_NAME" || true
 docker rm -f "$CONTAINER_NAME" || true
 
 if docker ps -a --format '{{.Names}}' | grep -qx "$OLD_CONTAINER"; then
-    echo "Old container found. Rolling back to ${OLD_CONTAINER}..."
-    docker rename "$OLD_CONTAINER" "$CONTAINER_NAME"
-    docker start "$CONTAINER_NAME" || true
-
-    for j in $(seq 1 6); do
-        if http_health_check; then
-            echo "Rollback successful. Previous container is serving HTTP successfully."
-            exit 1
-        fi
-        http_status=$?
-
-        if [ "$http_status" -eq 127 ] && tcp_health_check; then
-            echo "Rollback recovered TCP reachability on port ${APP_PORT}."
-            exit 1
-        fi
-
-        echo "Waiting for rolled-back application health... attempt $j/6"
-        sleep 5
-    done
-
-    echo "CRITICAL: Rollback failed. Application is unresponsive."
-    docker logs "$CONTAINER_NAME" || true
-    exit 1
-else
-    echo "CRITICAL: No previous container found to execute rollback."
-    exit 1
+  log "rollback previous container"
+  docker rename "$OLD_CONTAINER" "$CONTAINER_NAME"
+  docker start "$CONTAINER_NAME" || true
 fi
+
+exit 1
 REMOTE_SCRIPT
 
-                                                # Loop over all discovered EC2 IPs and deploy
-                                                if [ ! -f "$WORKSPACE/ec2_public_ips.txt" ]; then
-                                                    echo "No EC2 IPs file found; aborting"
-                                                    exit 1
-                                                fi
+                        while IFS= read -r EC2_HOST || [ -n "$EC2_HOST" ]; do
+                            [ -z "$EC2_HOST" ] && continue
 
-                                                while read -r EC2_HOST; do
-                                                    if [ -z "$EC2_HOST" ]; then
-                                                        continue
-                                                    fi
-                                                    echo "Deploying to $EC2_HOST"
-                                                    scp -o StrictHostKeyChecking=no -i "$SSH_KEY_FILE" deploy-ec2.sh "$SSH_USER@$EC2_HOST:/tmp/deploy-ec2.sh"
-                                                    ssh -o StrictHostKeyChecking=no -i "$SSH_KEY_FILE" "$SSH_USER@$EC2_HOST" "chmod +x /tmp/deploy-ec2.sh && /tmp/deploy-ec2.sh '$IMAGE_REF' '$CONTAINER_NAME' '$APP_PORT' '${HEALTHCHECK_PATH}' '$DOCKER_USERNAME' '$DOCKER_PASSWORD'"
-                                                done < "$WORKSPACE/ec2_public_ips.txt"
+                            echo "===================================="
+                            echo "Deploying to $EC2_HOST"
+                            echo "===================================="
 
-                                                rm -f deploy-ec2.sh
-                                        '''
-                                }
-                        }
+                            cat > deploy.env <<EOF
+IMAGE_REF=${IMAGE_REF}
+CONTAINER_NAME=${CONTAINER_NAME}
+APP_PORT=${APP_PORT}
+HEALTHCHECK_PATH=${HEALTHCHECK_PATH}
+DOCKER_USERNAME=${DOCKER_USERNAME}
+DOCKER_PASSWORD=${DOCKER_PASSWORD}
+EOF
+
+                            scp -o StrictHostKeyChecking=no -i "$SSH_KEY_FILE" deploy-ec2.sh deploy.env "$SSH_USER@$EC2_HOST:/tmp/"
+
+                            if ! ssh -o StrictHostKeyChecking=no -i "$SSH_KEY_FILE" "$SSH_USER@$EC2_HOST" '
+                                set -euo pipefail
+                                chmod 700 /tmp/deploy-ec2.sh
+                                chmod 600 /tmp/deploy.env
+                                set -a
+                                . /tmp/deploy.env
+                                set +a
+                                /tmp/deploy-ec2.sh
+                            '; then
+                                echo "Deployment failed on $EC2_HOST"
+                                echo "---- diagnostics: $EC2_HOST ----"
+                                ssh -o StrictHostKeyChecking=no -i "$SSH_KEY_FILE" "$SSH_USER@$EC2_HOST" '
+                                    set +e
+                                    echo "--- hostname ---"
+                                    hostname
+                                    echo "--- docker images ---"
+                                    docker images
+                                    echo "--- docker ps -a ---"
+                                    docker ps -a
+                                    echo "--- app logs ---"
+                                    docker logs "'"${CONTAINER_NAME}"'" 2>/dev/null || true
+                                    echo "--- port check ---"
+                                    ss -lntp | grep ":5000" || true
+                                    echo "--- temp files ---"
+                                    ls -l /tmp/deploy-ec2.sh /tmp/deploy.env || true
+                                ' || true
+                                FAILED=1
+                            else
+                                echo "Deployment succeeded on $EC2_HOST"
+                            fi
+
+                            rm -f deploy.env
+                        done < "$WORKSPACE/ec2_public_ips.txt"
+
+                        rm -f deploy-ec2.sh deploy.env
+
+                        if [ "$FAILED" -ne 0 ]; then
+                            echo "One or more EC2 deployments failed"
+                            exit 1
+                        fi
+                    '''
                 }
+            }
+        }
     }
 
     post {
@@ -535,25 +570,27 @@ REMOTE_SCRIPT
                     if [ -s terraform.tfstate.backup ]; then
                         cp -f terraform.tfstate.backup "$TF_STATE_DIR/terraform.tfstate.backup"
                     fi
+
                     rm -f tfplan tfplan.txt .tf_plan_exit_code
                 '''
             }
+
             sh '''
                 set +e
-                # Use Docker containers to run find as root, circumventing permission denied errors on cache files
                 docker run --rm -v "$TRIVY_CACHE_DIR:/cache" alpine:latest find /cache -type f -mtime +7 -delete || true
                 docker run --rm -v "$TF_PLUGIN_CACHE_DIR:/cache" alpine:latest find /cache -type f -mtime +30 -delete || true
                 docker run --rm -v "$TF_STATE_DIR:/state" alpine:latest find /state -name "*.archive" -type f -mtime +30 -delete || true
             '''
+
             cleanWs(deleteDirs: true, disableDeferredWipeout: true)
         }
 
         success {
-            echo 'Pipeline completed successfully. Infrastructure was applied and the immutable app image was deployed to EC2.'
+            echo 'Pipeline completed successfully. Infrastructure was applied and the app image was deployed to all EC2 hosts.'
         }
 
         failure {
-            echo 'Pipeline failed. Infrastructure state and container status have been logged.'
+            echo 'Pipeline failed. Check per-host diagnostics in the Deploy to EC2 stage.'
         }
     }
 }
