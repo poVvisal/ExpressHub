@@ -8,25 +8,29 @@ pipeline {
     }
 
     environment {
-        AWS_ACCESS_KEY_ID                 = "REDACTED-ACCESS-KEY"
-        AWS_SECRET_ACCESS_KEY             = "REDACTED-SECRET-KEY"
+        AWS_ACCESS_KEY_ID                 = "accesskey123"
+        AWS_SECRET_ACCESS_KEY             = "secretkey123"
         AWS_DEFAULT_REGION                = "us-east-1"
+        TF_VAR_existing_security_group_id = "sg-12345678"
+        TF_VAR_existing_key_name          = "final"
+        TF_VAR_grafana_password           = "khmer4ever"
+        TF_VAR_instance_count             = "2"
 
-        TF_VAR_existing_security_group_id = "sg-0795c0d85a643e9b5"
-        TF_VAR_existing_key_name          = "new-key"
-        TF_VAR_grafana_password           = "REDACTED-PASSWORD"
+        TF_DIR                            = "terraform/dev"
+        TF_STATE_DIR                      = "/var/lib/jenkins/terraform-state/expresshub/dev"
+        TF_PLUGIN_CACHE_DIR               = "/var/lib/jenkins/.terraform.d/plugin-cache"
+        TRIVY_CACHE_DIR                   = "/var/lib/jenkins/trivy-cache"
 
-        TF_DIR              = "terraform/dev"
-        TF_STATE_DIR        = "/var/lib/jenkins/terraform-state/expresshub/dev"
-        TF_PLUGIN_CACHE_DIR = "/var/lib/jenkins/.terraform.d/plugin-cache"
-        TRIVY_CACHE_DIR     = "/var/lib/jenkins/trivy-cache"
+        SONAR_SCANNER_HOME                = tool('sonar-scanner')
+        PATH                              = "${SONAR_SCANNER_HOME}/bin:${env.PATH}"
 
-        SONAR_SCANNER_HOME  = tool('sonar-scanner')
-        PATH                = "${SONAR_SCANNER_HOME}/bin:${env.PATH}"
+        DOCKER_IMAGE_NAME                 = "expresshub-app"
+        CONTAINER_NAME                    = "foodexpress-js"
+        APP_PORT                          = "5000"
+        HEALTHCHECK_PATH                  = "/"
 
-        DOCKER_IMAGE_NAME   = "expresshub-app"
-        CONTAINER_NAME      = "foodexpress-js"
-        APP_PORT            = "5000"
+        TRIVY_VERSION                     = "0.69.3"
+        GIT_BRANCH                        = "main"
     }
 
     stages {
@@ -35,16 +39,16 @@ pipeline {
             steps {
                 sh '''
                     set -e
-                    mkdir -p /var/lib/jenkins/terraform-state/expresshub/dev \
-                             /var/lib/jenkins/.terraform.d/plugin-cache \
-                             /var/lib/jenkins/trivy-cache
+                    mkdir -p "$TF_STATE_DIR" \
+                             "$TF_PLUGIN_CACHE_DIR" \
+                             "$TRIVY_CACHE_DIR"
                 '''
             }
         }
 
         stage('Clone Repository') {
             steps {
-                git branch: 'main', url: 'https://github.com/poVvisal/ExpressHub.git'
+                git branch: "${GIT_BRANCH}", url: 'https://github.com/poVvisal/ExpressHub.git'
             }
         }
 
@@ -52,6 +56,7 @@ pipeline {
             steps {
                 withSonarQubeEnv('jenkins2sonar') {
                     sh '''
+                        set -e
                         sonar-scanner \
                           -Dsonar.projectKey=ExpressHub \
                           -Dsonar.projectName=ExpressHub \
@@ -78,16 +83,32 @@ pipeline {
             steps {
                 sh '''
                     set -e
+
                     docker run --rm \
-                      -v $TRIVY_CACHE_DIR:/root/.cache/ \
-                      -v $WORKSPACE:/app \
-                      aquasec/trivy:latest fs /app \
+                      -v "$TRIVY_CACHE_DIR:/root/.cache/" \
+                      -v "$WORKSPACE:/app" \
+                      "aquasec/trivy:${TRIVY_VERSION}" fs /app \
                       --scanners vuln,secret,misconfig \
                       --exit-code 1 \
                       --severity HIGH,CRITICAL \
                       --ignore-unfixed \
-                      --skip-dirs /app/terraform
+                      --skip-dirs /app/terraform \
+                      --format template \
+                      --template "@contrib/html.tpl" \
+                      -o /app/trivy-fs-report.html
+
+                    docker run --rm \
+                      -v "$TRIVY_CACHE_DIR:/root/.cache/" \
+                      -v "$WORKSPACE:/app" \
+                      "aquasec/trivy:${TRIVY_VERSION}" fs /app \
+                      --scanners vuln,secret,misconfig \
+                      --severity HIGH,CRITICAL \
+                      --ignore-unfixed \
+                      --skip-dirs /app/terraform \
+                      --format json \
+                      -o /app/trivy-fs-report.json
                 '''
+                archiveArtifacts artifacts: 'trivy-fs-report.html,trivy-fs-report.json', fingerprint: true
             }
         }
 
@@ -95,7 +116,13 @@ pipeline {
             steps {
                 sh '''
                     set -e
-                    docker build -t ${DOCKER_IMAGE_NAME}:latest .
+                    IMAGE_TAG="${GIT_COMMIT:-$(git rev-parse --short HEAD)}"
+                    echo "$IMAGE_TAG" > image_tag.txt
+
+                    docker build \
+                      -t ${DOCKER_IMAGE_NAME}:$IMAGE_TAG \
+                      -t ${DOCKER_IMAGE_NAME}:latest \
+                      .
                 '''
             }
         }
@@ -104,19 +131,31 @@ pipeline {
             steps {
                 sh '''
                     set -e
+                    IMAGE_TAG=$(cat image_tag.txt)
+
                     docker run --rm \
-                      -v $TRIVY_CACHE_DIR:/root/.cache/ \
+                      -v "$TRIVY_CACHE_DIR:/root/.cache/" \
                       -v /var/run/docker.sock:/var/run/docker.sock \
-                      aquasec/trivy:0.69.3 image ${DOCKER_IMAGE_NAME}:latest \
+                      -v "$WORKSPACE:/app" \
+                      "aquasec/trivy:${TRIVY_VERSION}" image ${DOCKER_IMAGE_NAME}:$IMAGE_TAG \
                       --exit-code 1 \
                       --severity HIGH,CRITICAL \
                       --ignore-unfixed \
                       --format template \
                       --template "@contrib/html.tpl" \
-                      -o trivy-report.html
+                      -o /app/trivy-image-report.html
 
+                    docker run --rm \
+                      -v "$TRIVY_CACHE_DIR:/root/.cache/" \
+                      -v /var/run/docker.sock:/var/run/docker.sock \
+                      -v "$WORKSPACE:/app" \
+                      "aquasec/trivy:${TRIVY_VERSION}" image ${DOCKER_IMAGE_NAME}:$IMAGE_TAG \
+                      --severity HIGH,CRITICAL \
+                      --ignore-unfixed \
+                      --format json \
+                      -o /app/trivy-image-report.json
                 '''
-                archiveArtifacts artifacts: 'trivy-report.html', fingerprint: true
+                archiveArtifacts artifacts: 'trivy-image-report.html,trivy-image-report.json', fingerprint: true
             }
         }
 
@@ -129,9 +168,38 @@ pipeline {
                 )]) {
                     sh '''
                         set -e
+                        IMAGE_TAG=$(cat image_tag.txt)
+
                         echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+
+                        docker tag ${DOCKER_IMAGE_NAME}:$IMAGE_TAG $DOCKER_USERNAME/${DOCKER_IMAGE_NAME}:$IMAGE_TAG
                         docker tag ${DOCKER_IMAGE_NAME}:latest $DOCKER_USERNAME/${DOCKER_IMAGE_NAME}:latest
+
+                        docker push $DOCKER_USERNAME/${DOCKER_IMAGE_NAME}:$IMAGE_TAG
                         docker push $DOCKER_USERNAME/${DOCKER_IMAGE_NAME}:latest
+
+                        echo "$DOCKER_USERNAME/${DOCKER_IMAGE_NAME}:$IMAGE_TAG" > image_ref.txt
+                    '''
+                }
+            }
+        }
+
+        stage('Restore Terraform State') {
+            steps {
+                dir("${env.TF_DIR}") {
+                    sh '''
+                        set -e
+                        if [ -f "$TF_STATE_DIR/terraform.tfstate" ]; then
+                          cp -f "$TF_STATE_DIR/terraform.tfstate" terraform.tfstate
+                          echo "Restored terraform.tfstate from Jenkins storage."
+                        else
+                          echo "No existing terraform.tfstate backup found. Proceeding with fresh state."
+                        fi
+
+                        if [ -f "$TF_STATE_DIR/terraform.tfstate.backup" ]; then
+                          cp -f "$TF_STATE_DIR/terraform.tfstate.backup" terraform.tfstate.backup
+                          echo "Restored terraform.tfstate.backup from Jenkins storage."
+                        fi
                     '''
                 }
             }
@@ -140,36 +208,316 @@ pipeline {
         stage('Terraform Init') {
             steps {
                 dir("${env.TF_DIR}") {
-                    sh 'terraform init'
+                    sh '''
+                        set -e
+                        export TF_PLUGIN_CACHE_DIR="$TF_PLUGIN_CACHE_DIR"
+                        terraform init -input=false
+                    '''
                 }
             }
         }
 
-        stage('Terraform Plan & Conditional Apply') {
+        stage('Terraform Validate') {
             steps {
                 dir("${env.TF_DIR}") {
-                    sh 'terraform plan -out=tfplan'
+                    sh '''
+                        set -e
+                        terraform validate
+                    '''
                 }
+            }
+        }
+
+        stage('Terraform Plan') {
+            steps {
+                dir("${env.TF_DIR}") {
+                    sh '''
+                        set -e
+                        rm -f tfplan tfplan.txt || true
+                        terraform plan -input=false -var="instance_count=${TF_VAR_instance_count}" -out=tfplan
+                        terraform show -no-color tfplan > tfplan.txt
+                    '''
+                }
+                archiveArtifacts artifacts: "${TF_DIR}/tfplan.txt", fingerprint: true
+            }
+        }
+
+        stage('Terraform Apply') {
+            steps {
+                dir("${env.TF_DIR}") {
+                    sh '''
+                        set -e
+                        terraform apply -input=false -auto-approve tfplan
+                        terraform output -json > "$WORKSPACE/terraform-outputs.json"
+                    '''
+                }
+                archiveArtifacts artifacts: 'terraform-outputs.json', fingerprint: true
             }
         }
 
         stage('Persist Terraform State') {
             steps {
-                sh 'echo Persist Terraform State'
+                dir("${env.TF_DIR}") {
+                    sh '''
+                        set +e
+                        if [ -s terraform.tfstate ] && grep -q '"version"' terraform.tfstate; then
+                            if [ -f "$TF_STATE_DIR/terraform.tfstate" ] && ! cmp -s terraform.tfstate "$TF_STATE_DIR/terraform.tfstate"; then
+                                cp -f "$TF_STATE_DIR/terraform.tfstate" "$TF_STATE_DIR/terraform.tfstate.$(date +%Y%m%d%H%M%S).archive"
+                            fi
+                            cp -f terraform.tfstate "$TF_STATE_DIR/terraform.tfstate"
+                            echo "Terraform state successfully persisted."
+                        else
+                            echo "Warning: Local terraform.tfstate is empty or invalid. Skipping persistence to prevent corruption."
+                        fi
+
+                        if [ -s terraform.tfstate.backup ]; then
+                            cp -f terraform.tfstate.backup "$TF_STATE_DIR/terraform.tfstate.backup"
+                        fi
+                    '''
+                }
             }
         }
 
         stage('Read EC2 Output') {
             steps {
-                sh 'echo Read EC2 Output'
+                dir("${env.TF_DIR}") {
+                    sh '''
+                        set -e
+                        # Ensure we have a JSON outputs file in the workspace (created by Apply stage)
+                        if [ ! -f "$WORKSPACE/terraform-outputs.json" ]; then
+                          terraform output -json > "$WORKSPACE/terraform-outputs.json"
+                        fi
+
+                        python3 - <<'PY'
+import json,sys
+o = json.load(open('$WORKSPACE/terraform-outputs.json'))
+ips = []
+if 'public_ip' in o:
+    val = o['public_ip'].get('value')
+    if isinstance(val, list):
+        ips = val
+    elif isinstance(val, str):
+        ips = [val]
+
+with open('$WORKSPACE/ec2_public_ips.txt','w') as f:
+    for ip in ips:
+        f.write(ip + "\n")
+print(len(ips))
+PY
+
+                        cat "$WORKSPACE/ec2_public_ips.txt" || true
+                    '''
+                }
             }
         }
 
-        stage('Deploy to EC2') {
-            steps {
-                sh 'echo Deploy to EC2'
-            }
-        }
+                stage('Wait for EC2 SSH') {
+                        steps {
+                                withCredentials([
+                                        sshUserPrivateKey(
+                                                credentialsId: 'ec2-ssh-key',
+                                                keyFileVariable: 'SSH_KEY_FILE',
+                                                usernameVariable: 'SSH_USER'
+                                        )
+                                ]) {
+                                        sh '''
+                                                set -e
+                                                chmod 600 "$SSH_KEY_FILE"
+                                                FAILED=0
+                                                if [ ! -f "$WORKSPACE/ec2_public_ips.txt" ]; then
+                                                    echo "No EC2 IPs file found; aborting"
+                                                    exit 1
+                                                fi
+
+                                                while read -r EC2_HOST; do
+                                                    if [ -z "$EC2_HOST" ]; then
+                                                        continue
+                                                    fi
+                                                    echo "Waiting for SSH on $EC2_HOST"
+                                                    READY=0
+                                                    for i in $(seq 1 18); do
+                                                        if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i "$SSH_KEY_FILE" "$SSH_USER@$EC2_HOST" 'echo ok' >/dev/null 2>&1; then
+                                                            echo "$EC2_HOST: SSH ready"
+                                                            READY=1
+                                                            break
+                                                        fi
+                                                        echo "$EC2_HOST: waiting... attempt $i/18"
+                                                        sleep 10
+                                                    done
+                                                    if [ "$READY" -ne 1 ]; then
+                                                        echo "$EC2_HOST: SSH did not become ready"
+                                                        FAILED=1
+                                                    fi
+                                                done < "$WORKSPACE/ec2_public_ips.txt"
+
+                                                if [ "$FAILED" -ne 0 ]; then
+                                                    echo "One or more hosts failed SSH readiness"
+                                                    exit 1
+                                                fi
+                                        '''
+                                }
+                        }
+                }
+
+                stage('Deploy to EC2') {
+                        steps {
+                                withCredentials([
+                                        usernamePassword(
+                                                credentialsId: 'docker-hub-credentials',
+                                                usernameVariable: 'DOCKER_USERNAME',
+                                                passwordVariable: 'DOCKER_PASSWORD'
+                                        ),
+                                        sshUserPrivateKey(
+                                                credentialsId: 'ec2-ssh-key',
+                                                keyFileVariable: 'SSH_KEY_FILE',
+                                                usernameVariable: 'SSH_USER'
+                                        )
+                                ]) {
+                                        sh '''
+                                                set -e
+
+                                                chmod 600 "$SSH_KEY_FILE"
+                                                IMAGE_REF=$(cat "$WORKSPACE/image_ref.txt")
+
+                                                cat > deploy-ec2.sh <<'REMOTE_SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Fix non-interactive PATH so that Docker is found
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+IMAGE_REF="$1"
+CONTAINER_NAME="$2"
+APP_PORT="$3"
+HEALTHCHECK_PATH="$4"
+DOCKER_USERNAME="$5"
+DOCKER_PASSWORD="$6"
+
+OLD_CONTAINER="${CONTAINER_NAME}-previous"
+HEALTH_URL="http://localhost:${APP_PORT}${HEALTHCHECK_PATH}"
+
+http_health_check() {
+    if command -v python3 >/dev/null 2>&1; then
+        python3 - "$HEALTH_URL" <<'PY'
+import sys
+import urllib.request
+url = sys.argv[1]
+try:
+        with urllib.request.urlopen(url, timeout=5) as r:
+                code = getattr(r, "status", r.getcode())
+                sys.exit(0 if 200 <= code < 300 else 1)
+except Exception:
+        sys.exit(1)
+PY
+        return $?
+    fi
+
+    if command -v wget >/dev/null 2>&1; then
+        wget -q --spider --timeout=5 "$HEALTH_URL"
+        return $?
+    fi
+
+    return 127
+}
+
+tcp_health_check() {
+    if command -v bash >/dev/null 2>&1; then
+        timeout 3 bash -c "</dev/tcp/localhost/${APP_PORT}" >/dev/null 2>&1
+        return $?
+    fi
+    return 127
+}
+
+echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+docker pull "$IMAGE_REF"
+
+if docker ps -a --format '{{.Names}}' | grep -qx "$OLD_CONTAINER"; then
+    docker rm -f "$OLD_CONTAINER" || true
+fi
+
+if docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER_NAME"; then
+    docker stop "$CONTAINER_NAME" || true
+    docker rename "$CONTAINER_NAME" "$OLD_CONTAINER"
+fi
+
+docker run -d \
+    --name "$CONTAINER_NAME" \
+    --restart unless-stopped \
+    -p "${APP_PORT}:${APP_PORT}" \
+    "$IMAGE_REF"
+
+for i in $(seq 1 18); do
+    if http_health_check; then
+        echo "Application HTTP health check passed: $HEALTH_URL"
+        docker rm -f "$OLD_CONTAINER" >/dev/null 2>&1 || true
+        exit 0
+    fi
+    http_status=$?
+
+    if [ "$http_status" -eq 127 ] && tcp_health_check; then
+        echo "HTTP check tools unavailable; TCP port ${APP_PORT} is reachable"
+        docker rm -f "$OLD_CONTAINER" >/dev/null 2>&1 || true
+        exit 0
+    fi
+
+    echo "Waiting for application health... attempt $i/18"
+    sleep 10
+done
+
+echo "New container failed health check, initiating rollback."
+docker logs "$CONTAINER_NAME" || true
+docker rm -f "$CONTAINER_NAME" || true
+
+if docker ps -a --format '{{.Names}}' | grep -qx "$OLD_CONTAINER"; then
+    echo "Old container found. Rolling back to ${OLD_CONTAINER}..."
+    docker rename "$OLD_CONTAINER" "$CONTAINER_NAME"
+    docker start "$CONTAINER_NAME" || true
+
+    for j in $(seq 1 6); do
+        if http_health_check; then
+            echo "Rollback successful. Previous container is serving HTTP successfully."
+            exit 1
+        fi
+        http_status=$?
+
+        if [ "$http_status" -eq 127 ] && tcp_health_check; then
+            echo "Rollback recovered TCP reachability on port ${APP_PORT}."
+            exit 1
+        fi
+
+        echo "Waiting for rolled-back application health... attempt $j/6"
+        sleep 5
+    done
+
+    echo "CRITICAL: Rollback failed. Application is unresponsive."
+    docker logs "$CONTAINER_NAME" || true
+    exit 1
+else
+    echo "CRITICAL: No previous container found to execute rollback."
+    exit 1
+fi
+REMOTE_SCRIPT
+
+                                                # Loop over all discovered EC2 IPs and deploy
+                                                if [ ! -f "$WORKSPACE/ec2_public_ips.txt" ]; then
+                                                    echo "No EC2 IPs file found; aborting"
+                                                    exit 1
+                                                fi
+
+                                                while read -r EC2_HOST; do
+                                                    if [ -z "$EC2_HOST" ]; then
+                                                        continue
+                                                    fi
+                                                    echo "Deploying to $EC2_HOST"
+                                                    scp -o StrictHostKeyChecking=no -i "$SSH_KEY_FILE" deploy-ec2.sh "$SSH_USER@$EC2_HOST:/tmp/deploy-ec2.sh"
+                                                    ssh -o StrictHostKeyChecking=no -i "$SSH_KEY_FILE" "$SSH_USER@$EC2_HOST" "chmod +x /tmp/deploy-ec2.sh && /tmp/deploy-ec2.sh '$IMAGE_REF' '$CONTAINER_NAME' '$APP_PORT' '${HEALTHCHECK_PATH}' '$DOCKER_USERNAME' '$DOCKER_PASSWORD'"
+                                                done < "$WORKSPACE/ec2_public_ips.txt"
+
+                                                rm -f deploy-ec2.sh
+                                        '''
+                                }
+                        }
+                }
     }
 
     post {
@@ -177,27 +525,35 @@ pipeline {
             dir("${env.TF_DIR}") {
                 sh '''
                     set +e
-                    [ -f terraform.tfstate ] && cp -f terraform.tfstate "$TF_STATE_DIR/terraform.tfstate" || true
-                    [ -f terraform.tfstate.backup ] && cp -f terraform.tfstate.backup "$TF_STATE_DIR/terraform.tfstate.backup" || true
-                    rm -f tfplan .tf_plan_exit_code
+                    if [ -s terraform.tfstate ] && grep -q '"version"' terraform.tfstate; then
+                        if [ -f "$TF_STATE_DIR/terraform.tfstate" ] && ! cmp -s terraform.tfstate "$TF_STATE_DIR/terraform.tfstate"; then
+                            cp -f "$TF_STATE_DIR/terraform.tfstate" "$TF_STATE_DIR/terraform.tfstate.$(date +%Y%m%d%H%M%S).archive"
+                        fi
+                        cp -f terraform.tfstate "$TF_STATE_DIR/terraform.tfstate"
+                    fi
+
+                    if [ -s terraform.tfstate.backup ]; then
+                        cp -f terraform.tfstate.backup "$TF_STATE_DIR/terraform.tfstate.backup"
+                    fi
+                    rm -f tfplan tfplan.txt .tf_plan_exit_code
                 '''
             }
             sh '''
                 set +e
-                find "$TRIVY_CACHE_DIR" -type f -mtime +7 -delete || true
-                find "$TF_PLUGIN_CACHE_DIR" -type f -mtime +30 -delete || true
-                docker image prune -af --filter "until=168h" || true
-                docker builder prune -af --filter "until=168h" || true
+                # Use Docker containers to run find as root, circumventing permission denied errors on cache files
+                docker run --rm -v "$TRIVY_CACHE_DIR:/cache" alpine:latest find /cache -type f -mtime +7 -delete || true
+                docker run --rm -v "$TF_PLUGIN_CACHE_DIR:/cache" alpine:latest find /cache -type f -mtime +30 -delete || true
+                docker run --rm -v "$TF_STATE_DIR:/state" alpine:latest find /state -name "*.archive" -type f -mtime +30 -delete || true
             '''
             cleanWs(deleteDirs: true, disableDeferredWipeout: true)
         }
 
         success {
-            echo 'Pipeline completed successfully.'
+            echo 'Pipeline completed successfully. Infrastructure was applied and the immutable app image was deployed to EC2.'
         }
 
         failure {
-            echo 'Pipeline failed, but Terraform state remains on the Jenkins server.'
+            echo 'Pipeline failed. Infrastructure state and container status have been logged.'
         }
     }
 }
