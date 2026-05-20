@@ -1,4 +1,13 @@
 services:
+  foodexpress-js:
+    image: ${IMAGE_REF}
+    container_name: foodexpress-js
+    ports:
+      - "${APP_PORT}:${APP_PORT}"
+    restart: unless-stopped
+    networks:
+      - elastic
+
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
