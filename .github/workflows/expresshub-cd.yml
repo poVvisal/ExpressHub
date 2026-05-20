@@ -82,6 +82,9 @@ jobs:
           script: |
             set -euo pipefail
             
+            # Fix directory ownership if created by root via user_data
+            sudo chown -R ubuntu:ubuntu /home/ubuntu/ExpressHub
+            
             # Pull latest repository changes to ensure docker-compose.yml is updated
             cd /home/ubuntu/ExpressHub
             git config --global --add safe.directory /home/ubuntu/ExpressHub

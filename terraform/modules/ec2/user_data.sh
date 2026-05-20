@@ -27,6 +27,9 @@ else
   cd /home/ubuntu/ExpressHub
 fi
 
+# Fix ownership since cloud-init runs as root
+chown -R ubuntu:ubuntu /home/ubuntu/ExpressHub
+
 # 5. Write env file so GF_SECURITY_ADMIN_PASSWORD persists for all future docker-compose runs
 echo "GF_SECURITY_ADMIN_PASSWORD=${grafana_password}" > /home/ubuntu/ExpressHub/build-process/.env
 
