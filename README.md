@@ -149,6 +149,14 @@ The `Jenkinsfile` orchestrates a secure, automated deployment pipeline with the 
 
 The `terraform/` directory manages AWS EC2 deployments across `dev`, `stage`, and `prod` environments.
 
+### Terraform Backend State Management
+To ensure a reliable, lockable, and scalable continuous deployment pipeline, ExpressHub uses an **AWS S3 Backend** for state management instead of local files or mock backends. 
+- **S3 Bucket (`expresshub-tfstate-v1`):** Stores the `terraform.tfstate` file remotely, providing a single source of truth for the infrastructure's current configuration.
+- **DynamoDB Table (`expresshub-state-lock`):** Prevents concurrent deployments or race conditions from corrupting the infrastructure state by enabling state locking.
+- **Encryption:** The state file is encrypted at rest within the S3 bucket to protect sensitive infrastructure details.
+
+Because the state is stored centrally in S3 rather than generated dynamically via a mock server at runtime, GitHub Actions pipelines can safely and securely run `terraform init`, `terraform plan`, and `terraform apply` seamlessly without executing custom mock state server setup scripts.
+
 ### Features
 - **Modular Design:** Uses a shared `ec2` module (`terraform/modules/ec2`).
 - **Dynamic Configuration:** Supports creating new Security Groups & Key Pairs, or reusing existing ones via variables (`existing_security_group_id`, `existing_key_name`).

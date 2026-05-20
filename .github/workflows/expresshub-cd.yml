@@ -90,17 +90,17 @@ jobs:
             export IMAGE_REF=$IMAGE_REF
             export APP_PORT=$APP_PORT
             
-            docker compose pull foodexpress-js
+            docker-compose pull foodexpress-js
             
             # Smart restart: This updates ONLY the app container without touching Grafana/Prometheus!
-            docker compose up -d foodexpress-js
+            docker-compose up -d foodexpress-js
             
             echo "Waiting for app to spin up..."
             sleep 10
             
             if ! curl -s -f http://localhost:$APP_PORT$HEALTHCHECK_PATH > /dev/null; then
               echo "CRITICAL: Health check failed! Dumping logs:"
-              docker compose logs foodexpress-js
+              docker-compose logs foodexpress-js
               exit 1
             fi
             
