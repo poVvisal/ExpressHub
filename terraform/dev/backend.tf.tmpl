@@ -1,0 +1,12 @@
+terraform {
+  backend "http" {
+    address        = "${TF_HTTP_ENDPOINT}"
+    update_method  = "PUT"
+    lock_address   = "${TF_HTTP_ENDPOINT}/lock"
+    unlock_address = "${TF_HTTP_ENDPOINT}/unlock"
+    lock_method    = "LOCK"
+    unlock_method  = "LOCK"
+    username       = "${TF_HTTP_USERNAME}"
+    password       = "${TF_HTTP_PASSWORD}"
+  }
+}

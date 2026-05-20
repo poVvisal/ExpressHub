@@ -33,6 +33,14 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
+      - name: Generate Terraform backend config from template
+        run: |
+          sed \
+            -e "s|\${TF_HTTP_ENDPOINT}|${{ secrets.TF_HTTP_ENDPOINT }}|g" \
+            -e "s|\${TF_HTTP_USERNAME}|${{ secrets.GH_USERNAME }}|g" \
+            -e "s|\${TF_HTTP_PASSWORD}|${{ secrets.GH_PAT }}|g" \
+            backend.tf.tmpl > backend.tf
+
       - name: Terraform Init
         run: terraform init -input=false
         env:
