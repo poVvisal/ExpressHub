@@ -49,6 +49,14 @@ jobs:
           }
           EOF
 
+      - name: Verify tfstate.dev is alive and resolvable
+        run: |
+          echo "Checking DNS resolution..."
+          nslookup api.tfstate.dev
+          
+          echo "Checking API connectivity..."
+          curl -Iv https://api.tfstate.dev/
+
       - name: Terraform Init
         run: terraform init -input=false
         env:
