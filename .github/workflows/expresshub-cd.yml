@@ -33,34 +33,9 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-
-      - name: Generate Terraform backend config
-        run: |
-          cat << 'EOF' > backend.tf
-          terraform {
-            backend "http" {
-              address        = "https://api.tfstate.dev/github/v1"
-              lock_address   = "https://api.tfstate.dev/github/v1/lock"
-              unlock_address = "https://api.tfstate.dev/github/v1/lock"
-              lock_method    = "PUT"
-              unlock_method  = "DELETE"
-              username       = "${{ github.repository }}"
-            }
-          }
-          EOF
-
-      - name: Verify tfstate.dev is alive and resolvable
-        run: |
-          echo "Checking DNS resolution..."
-          nslookup api.tfstate.dev
-          
-          echo "Checking API connectivity..."
-          curl -Iv https://api.tfstate.dev/
-
       - name: Terraform Init
         run: terraform init -input=false
         env:
-          TF_HTTP_PASSWORD: ${{ secrets.GH_PAT }} # Or your GH_PAT if it needs more permissions
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
