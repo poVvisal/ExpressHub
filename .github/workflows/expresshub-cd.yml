@@ -84,6 +84,7 @@ jobs:
             
             # Pull latest repository changes to ensure docker-compose.yml is updated
             cd /home/ubuntu/ExpressHub
+            git config --global --add safe.directory /home/ubuntu/ExpressHub
             git pull
             
             cd build-process
