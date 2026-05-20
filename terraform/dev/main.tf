@@ -9,8 +9,8 @@ module "ec2" {
   instance_count   = var.instance_count
   root_volume_size = var.root_volume_size
   root_volume_type = var.root_volume_type
-  ssh_cidr_blocks  = ["117.20.115.254/32"]
-  app_port_cidr_blocks = ["172.31.0.0/16"]
+  ssh_cidr_blocks  = ["0.0.0.0/0"]
+  app_port_cidr_blocks = ["0.0.0.0/0"]
   existing_security_group_id = var.existing_security_group_id
   existing_key_name          = var.existing_key_name
   grafana_password = var.grafana_password
