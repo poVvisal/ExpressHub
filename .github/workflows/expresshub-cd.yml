@@ -67,6 +67,10 @@ jobs:
         run: |
           PUBLIC_IP=$(terraform output -raw public_ip)
           echo "ec2_public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: "us-east-1"
 
   deploy-app:
     name: Deploy App to EC2
