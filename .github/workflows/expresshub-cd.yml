@@ -1,0 +1,211 @@
+name: ExpressHub CD
+
+on:
+  workflow_run:
+    workflows: ["ExpressHub CI"]
+    types:
+      - completed
+    branches:
+      - main
+
+env:
+  TF_DIR: "terraform/dev"
+  CONTAINER_NAME: "foodexpress-js"
+  APP_PORT: "5000"
+  HEALTHCHECK_PATH: "/"
+  DOCKER_IMAGE_NAME: "expresshub-app"
+
+jobs:
+  deploy-infra:
+    name: Terraform Apply
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    outputs:
+      ec2_public_ip: ${{ steps.tf_output.outputs.ec2_public_ip }}
+    defaults:
+      run:
+        working-directory: ${{ env.TF_DIR }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init -input=false
+        env:
+          TF_HTTP_USERNAME: ${{ secrets.GH_USERNAME }}
+          TF_HTTP_PASSWORD: ${{ secrets.GH_PAT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: "us-east-1"
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: terraform plan -input=false -out=tfplan
+        env:
+          TF_HTTP_USERNAME: ${{ secrets.GH_USERNAME }}
+          TF_HTTP_PASSWORD: ${{ secrets.GH_PAT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: "us-east-1"
+          TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
+
+      - name: Terraform Apply
+        run: terraform apply -input=false -auto-approve tfplan
+        env:
+          TF_HTTP_USERNAME: ${{ secrets.GH_USERNAME }}
+          TF_HTTP_PASSWORD: ${{ secrets.GH_PAT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: "us-east-1"
+          TF_VAR_grafana_password: ${{ secrets.GRAFANA_PASSWORD }}
+
+      - name: Read EC2 Output
+        id: tf_output
+        run: |
+          PUBLIC_IP=$(terraform output -raw public_ip)
+          echo "ec2_public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+
+  deploy-app:
+    name: Deploy App to EC2
+    needs: deploy-infra
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set Image Tag
+        id: vars
+        run: |
+          IMAGE_TAG=${GITHUB_SHA::7}
+          if [ "${{ github.event_name }}" == "workflow_run" ]; then
+            IMAGE_TAG=${{ github.event.workflow_run.head_sha }}
+            IMAGE_TAG=${IMAGE_TAG::7}
+          fi
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+          echo "IMAGE_REF=${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:$IMAGE_TAG" >> $GITHUB_ENV
+
+      - name: Wait for SSH
+        run: |
+          for i in $(seq 1 18); do
+            nc -z -w 10 ${{ needs.deploy-infra.outputs.ec2_public_ip }} 22 && echo "SSH is ready" && exit 0
+            echo "Waiting for SSH... attempt $i/18"
+            sleep 10
+          done
+          echo "SSH did not become ready in time."
+          exit 1
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ needs.deploy-infra.outputs.ec2_public_ip }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: IMAGE_REF,CONTAINER_NAME,APP_PORT,HEALTHCHECK_PATH
+          script: |
+            set -euo pipefail
+            export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+            DOCKER_USERNAME=${{ secrets.DOCKER_USERNAME }}
+            DOCKER_PASSWORD=${{ secrets.DOCKER_PASSWORD }}
+
+            OLD_CONTAINER="${CONTAINER_NAME}-previous"
+            HEALTH_URL="http://localhost:${APP_PORT}${HEALTHCHECK_PATH}"
+
+            http_health_check() {
+              if command -v python3 >/dev/null 2>&1; then
+                python3 - "$HEALTH_URL" <<'PY'
+            import sys
+            import urllib.request
+            url = sys.argv[1]
+            try:
+                with urllib.request.urlopen(url, timeout=5) as r:
+                    code = getattr(r, "status", r.getcode())
+                    sys.exit(0 if 200 <= code < 300 else 1)
+            except Exception:
+                sys.exit(1)
+            PY
+                return $?
+              fi
+              if command -v wget >/dev/null 2>&1; then
+                wget -q --spider --timeout=5 "$HEALTH_URL"
+                return $?
+              fi
+              return 127
+            }
+
+            tcp_health_check() {
+              if command -v bash >/dev/null 2>&1; then
+                timeout 3 bash -c "</dev/tcp/localhost/${APP_PORT}" >/dev/null 2>&1
+                return $?
+              fi
+              return 127
+            }
+
+            echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+            docker pull "$IMAGE_REF"
+
+            if docker ps -a --format '{{.Names}}' | grep -qx "$OLD_CONTAINER"; then
+              docker rm -f "$OLD_CONTAINER" || true
+            fi
+
+            if docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER_NAME"; then
+              docker stop "$CONTAINER_NAME" || true
+              docker rename "$CONTAINER_NAME" "$OLD_CONTAINER"
+            fi
+
+            docker run -d \
+              --name "$CONTAINER_NAME" \
+              --restart unless-stopped \
+              -p "${APP_PORT}:${APP_PORT}" \
+              "$IMAGE_REF"
+
+            for i in $(seq 1 18); do
+              if http_health_check; then
+                echo "Application HTTP health check passed: $HEALTH_URL"
+                docker rm -f "$OLD_CONTAINER" >/dev/null 2>&1 || true
+                exit 0
+              fi
+              http_status=$?
+
+              if [ "$http_status" -eq 127 ] && tcp_health_check; then
+                echo "HTTP check tools unavailable; TCP port ${APP_PORT} is reachable"
+                docker rm -f "$OLD_CONTAINER" >/dev/null 2>&1 || true
+                exit 0
+              fi
+
+              echo "Waiting for application health... attempt $i/18"
+              sleep 10
+            done
+
+            echo "New container failed health check, initiating rollback."
+            docker logs "$CONTAINER_NAME" || true
+            docker rm -f "$CONTAINER_NAME" || true
+
+            if docker ps -a --format '{{.Names}}' | grep -qx "$OLD_CONTAINER"; then
+              echo "Old container found. Rolling back to ${OLD_CONTAINER}..."
+              docker rename "$OLD_CONTAINER" "$CONTAINER_NAME"
+              docker start "$CONTAINER_NAME" || true
+
+              for j in $(seq 1 6); do
+                if http_health_check; then
+                  echo "Rollback successful."
+                  exit 1
+                fi
+                http_status=$?
+                if [ "$http_status" -eq 127 ] && tcp_health_check; then
+                  echo "Rollback recovered TCP reachability."
+                  exit 1
+                fi
+                echo "Waiting for rolled-back application health... attempt $j/6"
+                sleep 5
+              done
+              echo "CRITICAL: Rollback failed."
+              docker logs "$CONTAINER_NAME" || true
+              exit 1
+            else
+              echo "CRITICAL: No previous container found to execute rollback."
+              exit 1
+            fi
