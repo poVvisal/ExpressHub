@@ -33,12 +33,42 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
+      - name: Start Mock Terraform State Server
+        run: |
+          # Map the local/mock domain to localhost
+          echo "127.0.0.1 tfstate.devExpressHub" | sudo tee -a /etc/hosts
+          
+          # Start a lightweight Python HTTP server acting as Terraform backend
+          cat << 'EOF' > mock_tfserver.py
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+          class MockTF(BaseHTTPRequestHandler):
+              state = b'{}'
+              def do_GET(self):
+                  self.send_response(200)
+                  self.end_headers()
+                  self.wfile.write(self.__class__.state)
+              def do_PUT(self):
+                  length = int(self.headers.get('Content-Length', 0))
+                  if length: self.__class__.state = self.rfile.read(length)
+                  self.send_response(200)
+                  self.end_headers()
+              def do_LOCK(self):
+                  self.send_response(200)
+                  self.end_headers()
+              def do_UNLOCK(self):
+                  self.send_response(200)
+                  self.end_headers()
+          HTTPServer(('127.0.0.1', 80), MockTF).serve_forever()
+          EOF
+          sudo python3 mock_tfserver.py &
+          sleep 2 # Allow server to boot
+
       - name: Generate Terraform backend config from template
         run: |
           sed \
-            -e "s|\${TF_HTTP_ENDPOINT}|${{ secrets.TF_HTTP_ENDPOINT || 'https://tfstate.devExpressHub' }}|g" \
-            -e "s|\${TF_HTTP_USERNAME}|${{ secrets.GH_USERNAME }}|g" \
-            -e "s|\${TF_HTTP_PASSWORD}|${{ secrets.GH_PAT }}|g" \
+            -e "s|\${TF_HTTP_ENDPOINT}|${{ secrets.TF_HTTP_ENDPOINT || 'http://tfstate.devExpressHub' }}|g" \
+            -e "s|\${TF_HTTP_USERNAME}|${{ secrets.GH_USERNAME || 'mock' }}|g" \
+            -e "s|\${TF_HTTP_PASSWORD}|${{ secrets.GH_PAT || 'mock' }}|g" \
             backend.tf.tmpl > backend.tf
 
       - name: Terraform Init
