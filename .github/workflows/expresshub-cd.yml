@@ -81,7 +81,12 @@ jobs:
           # Ah nis very beautiful. Clean, readable, and functional.
           script: |
             set -euo pipefail
-            cd /home/ubuntu/ExpressHub/build-process
+            
+            # Pull latest repository changes to ensure docker-compose.yml is updated
+            cd /home/ubuntu/ExpressHub
+            git pull
+            
+            cd build-process
 
             # Log in and pull the fresh image
             echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
