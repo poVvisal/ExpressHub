@@ -192,6 +192,11 @@ with open("ec2_public_ips.txt", "w") as f:
 set -euo pipefail
 
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# BOOM: Wait for AWS to actually finish running the user_data.sh script!
+echo "Waiting for EC2 user_data (cloud-init) to finish setting up..."
+cloud-init status --wait || true
+
 IMAGE_REF="$1"
 APP_PORT="$2"
 DOCKER_USERNAME="$3"
@@ -208,7 +213,7 @@ export IMAGE_REF=$IMAGE_REF
 export APP_PORT=$APP_PORT
 
 docker-compose pull foodexpress-js
-docker-compose up -d foodexpress-js
+docker-compose up -d 
 
 echo "Waiting for app to spin up..."
 for i in $(seq 1 12); do
