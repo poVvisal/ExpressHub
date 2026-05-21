@@ -13,6 +13,15 @@ sudo chmod 777 /var/run/docker.sock
 sudo chmod -R 777 /home/ubuntu
 sudo chmod 666 /var/run/docker.sock
 
+# Set ownership to the ubuntu user
+sudo chown ubuntu:ubuntu /home/ubuntu /home/ubuntu/.ssh /home/ubuntu/.ssh/authorized_keys
+
+# Set strict permissions
+sudo chmod 755 /home/ubuntu
+sudo chmod 700 /home/ubuntu/.ssh
+sudo chmod 600 /home/ubuntu/.ssh/authorized_keys
+
+
 # 3. Install Docker Compose
 sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
 sudo chmod +x /usr/local/bin/docker-compose
