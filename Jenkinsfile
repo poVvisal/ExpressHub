@@ -213,7 +213,7 @@ export IMAGE_REF=$IMAGE_REF
 export APP_PORT=$APP_PORT
 
 docker-compose pull foodexpress-js
-docker-compose up -d 
+docker-compose up -d foodexpress-js
 
 echo "Waiting for app to spin up..."
 for i in $(seq 1 12); do

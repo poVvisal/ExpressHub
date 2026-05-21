@@ -25,7 +25,6 @@ sudo chmod 600 /home/ubuntu/.ssh/authorized_keys
 # 3. Install Docker Compose
 sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
 sudo chmod +x /usr/local/bin/docker-compose
-sudo newgrp docker
 
 # 4. Clone the repository for the Monitoring Stack setup
 if [ -d "/home/ubuntu/ExpressHub" ]; then
@@ -41,6 +40,8 @@ chown -R ubuntu:ubuntu /home/ubuntu/ExpressHub
 
 # 5. Write env file so GF_SECURITY_ADMIN_PASSWORD persists for all future docker-compose runs
 echo "GF_SECURITY_ADMIN_PASSWORD=${grafana_password}" > /home/ubuntu/ExpressHub/build-process/.env
+echo "IMAGE_REF=placeholder-image:latest" >> /home/ubuntu/ExpressHub/build-process/.env
+echo "APP_PORT=5000" >> /home/ubuntu/ExpressHub/build-process/.env
 
 # 6. Deploy the Monitoring Stack (Infrastructure)
 export GF_SECURITY_ADMIN_PASSWORD="${grafana_password}"
